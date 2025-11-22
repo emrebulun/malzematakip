@@ -12,7 +12,7 @@ import plotly.graph_objects as go
 
 # Page config
 st.set_page_config(
-    page_title="Şantiye 997 - Advanced Dashboard",
+    page_title="Şantiye 997 - Yönetim Paneli",
     page_icon="🏗️",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -183,9 +183,9 @@ if page == "📊 Executive Dashboard":
     # ============================================
     # TIME SERIES ANALYSIS (ALL MATERIALS)
     # ============================================
-    st.markdown("## 📅 Zaman Serisi ve Trendler")
+    st.markdown("## 📅 Aylık Tüketim Trendleri")
     
-    tab1, tab2, tab3 = st.tabs(["🧱 Beton Trendi", "⚙️ Demir Trendi", "🔲 Hasır Trendi"])
+    tab1, tab2, tab3 = st.tabs(["🧱 Beton", "⚙️ Demir", "🔲 Hasır"])
     
     with tab1:
         if not concrete_df.empty:
@@ -320,12 +320,12 @@ if page == "📊 Executive Dashboard":
     # ============================================
     # LOCATION & SUPPLIER ANALYSIS
     # ============================================
-    st.markdown("## 📍 Blok ve Tedarikçi Analizi")
+    st.markdown("## 📍 Blok ve Tedarikçi Özeti")
     
     col1, col2 = st.columns([2, 1])
     
     with col1:
-        st.markdown("### 🏗️ En Çok Beton Dökülen Bloklar (Top 15)")
+        st.markdown("### 🏗️ En Çok Beton Dökülen Bloklar (İlk 15)")
         concrete_by_location = get_cached_concrete_by_location()
         if not concrete_by_location.empty:
             top_locations = concrete_by_location.head(15)
@@ -417,44 +417,47 @@ elif page == "📈 Detaylı Analizler":
             with col1:
                 st.markdown("### 🥇 En Çok Beton Alan Bloklar")
                 top_blocks = concrete_df.groupby('location_block')['quantity_m3'].sum().nlargest(10).reset_index()
-                fig = px.bar(
-                    top_blocks,
-                    y='location_block',
-                    x='quantity_m3',
-                    orientation='h',
-                    title="Top 10 Blok",
-                    color='quantity_m3',
-                    color_continuous_scale='Blues'
-                )
-                fig.update_layout(showlegend=False, height=400)
-                st.plotly_chart(fig, use_container_width=True)
-            
-            with col2:
-                st.markdown("### 📅 En Yoğun Günler")
-                busiest_days = concrete_df.groupby('date')['quantity_m3'].sum().nlargest(10).reset_index()
-                fig = px.bar(
-                    busiest_days,
-                    x='date',
-                    y='quantity_m3',
-                    title="En Yoğun 10 Gün",
-                    color='quantity_m3',
-                    color_continuous_scale='Reds'
-                )
-                fig.update_layout(showlegend=False, height=400)
-                st.plotly_chart(fig, use_container_width=True)
-            
-            with col3:
-                st.markdown("### 🧪 En Popüler Beton Sınıfları")
-                top_classes = concrete_df.groupby('concrete_class')['quantity_m3'].sum().nlargest(10).reset_index()
-                fig = px.bar(
-                    top_classes,
-                    y='concrete_class',
-                    x='quantity_m3',
-                    orientation='h',
-                    title="Top 10 Sınıf",
-                    color='quantity_m3',
-                    color_continuous_scale='Greens'
-                )
+            fig = px.bar(
+                top_blocks,
+                y='location_block',
+                x='quantity_m3',
+                orientation='h',
+                title="En Çok Beton Alan 10 Blok",
+                color='quantity_m3',
+                color_continuous_scale='Blues',
+                labels={'location_block': 'Blok', 'quantity_m3': 'Miktar (m³)'}
+            )
+            fig.update_layout(showlegend=False, height=400)
+            st.plotly_chart(fig, use_container_width=True)
+        
+        with col2:
+            st.markdown("### 📅 En Yoğun Günler")
+            busiest_days = concrete_df.groupby('date')['quantity_m3'].sum().nlargest(10).reset_index()
+            fig = px.bar(
+                busiest_days,
+                x='date',
+                y='quantity_m3',
+                title="En Yoğun 10 Gün",
+                color='quantity_m3',
+                color_continuous_scale='Reds',
+                labels={'date': 'Tarih', 'quantity_m3': 'Miktar (m³)'}
+            )
+            fig.update_layout(showlegend=False, height=400)
+            st.plotly_chart(fig, use_container_width=True)
+        
+        with col3:
+            st.markdown("### 🧪 Beton Sınıfları")
+            top_classes = concrete_df.groupby('concrete_class')['quantity_m3'].sum().nlargest(10).reset_index()
+            fig = px.bar(
+                top_classes,
+                y='concrete_class',
+                x='quantity_m3',
+                orientation='h',
+                title="En Çok Kullanılan 10 Sınıf",
+                color='quantity_m3',
+                color_continuous_scale='Greens',
+                labels={'concrete_class': 'Sınıf', 'quantity_m3': 'Miktar (m³)'}
+            )
                 fig.update_layout(showlegend=False, height=400)
                 st.plotly_chart(fig, use_container_width=True)
             
