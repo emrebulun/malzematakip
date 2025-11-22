@@ -90,10 +90,19 @@ class ExcelValidator:
         if not date_col:
             # Tarih formatına benzeyen ilk sütunu bul
             for col in df.columns:
-                sample = df[col].dropna().head(5).astype(str).tolist()
-                if any(re.search(r'\d{2}[./-]\d{2}[./-]\d{4}', s) for s in sample):
-                    date_col = col
-                    break
+                # Güvenli sütun seçimi (Duplicate column names hatası almamak için iloc kullanabiliriz ama iterasyonda col name kullanıyoruz)
+                # Eğer col ismi unique değilse df[col] DataFrame döner.
+                try:
+                    col_data = df[col]
+                    if isinstance(col_data, pd.DataFrame):
+                        col_data = col_data.iloc[:, 0] # İlkini al
+                    
+                    sample = col_data.dropna().head(5).astype(str).tolist()
+                    if any(re.search(r'\d{2}[./-]\d{2}[./-]\d{4}', s) for s in sample):
+                        date_col = col
+                        break
+                except:
+                    continue
 
         # Eğer miktar sütunu bulunamadıysa, sayısal değer içeren sütunlara bak
         # Ancak beton fiyatı ile karışabilir. "M3" veya "Miktar" yoksa riskli.
