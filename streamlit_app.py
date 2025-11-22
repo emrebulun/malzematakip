@@ -463,45 +463,44 @@ elif page == "📈 Detaylı Analizler":
         
         st.markdown("---")
         
-        # Detailed statistics
-        st.markdown("## 📊 İstatistiksel Özetler")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("### 📈 Miktar Dağılımı")
-            fig = px.histogram(
-                concrete_df,
-                x='quantity_m3',
-                nbins=50,
-                title="Beton Miktar Dağılımı",
-                labels={'quantity_m3': 'Miktar (m³)', 'count': 'Frekans'}
-            )
-            fig.update_traces(marker_color='#FF6B00')
-            st.plotly_chart(fig, use_container_width=True)
+            # Detailed statistics
+            st.markdown("## 📊 İstatistiksel Özetler")
             
-            # Statistics
-            st.markdown("**İstatistikler:**")
-            st.write(f"- **Ortalama:** {concrete_df['quantity_m3'].mean():.2f} m³")
-            st.write(f"- **Medyan:** {concrete_df['quantity_m3'].median():.2f} m³")
-            st.write(f"- **Std Sapma:** {concrete_df['quantity_m3'].std():.2f} m³")
-            st.write(f"- **Min:** {concrete_df['quantity_m3'].min():.2f} m³")
-            st.write(f"- **Max:** {concrete_df['quantity_m3'].max():.2f} m³")
-        
-        with col2:
-            st.markdown("### 📦 Box Plot Analizi")
-            fig = px.box(
-                concrete_df,
-                y='quantity_m3',
-                x='concrete_class',
-                title="Beton Sınıfına Göre Miktar Dağılımı",
-                color='concrete_class'
-            )
-            fig.update_layout(showlegend=False)
-            st.plotly_chart(fig, use_container_width=True)
+            col1, col2 = st.columns(2)
             
-    else:
-        st.info("Henüz beton verisi yok")
+            with col1:
+                st.markdown("### 📈 Miktar Dağılımı")
+                fig = px.histogram(
+                    concrete_df,
+                    x='quantity_m3',
+                    nbins=50,
+                    title="Beton Miktar Dağılımı",
+                    labels={'quantity_m3': 'Miktar (m³)', 'count': 'Frekans'}
+                )
+                fig.update_traces(marker_color='#FF6B00')
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # Statistics
+                st.markdown("**İstatistikler:**")
+                st.write(f"- **Ortalama:** {concrete_df['quantity_m3'].mean():.2f} m³")
+                st.write(f"- **Medyan:** {concrete_df['quantity_m3'].median():.2f} m³")
+                st.write(f"- **Std Sapma:** {concrete_df['quantity_m3'].std():.2f} m³")
+                st.write(f"- **Min:** {concrete_df['quantity_m3'].min():.2f} m³")
+                st.write(f"- **Max:** {concrete_df['quantity_m3'].max():.2f} m³")
+            
+            with col2:
+                st.markdown("### 📦 Box Plot Analizi")
+                fig = px.box(
+                    concrete_df,
+                    y='quantity_m3',
+                    x='concrete_class',
+                    title="Beton Sınıfına Göre Miktar Dağılımı",
+                    color='concrete_class'
+                )
+                fig.update_layout(showlegend=False)
+                st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Henüz beton verisi yok")
 
     with tab_demir:
         with st.spinner('📊 Demir verileri analiz ediliyor...'):
