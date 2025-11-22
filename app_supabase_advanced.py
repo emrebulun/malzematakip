@@ -807,7 +807,7 @@ elif page == "🔲 Hasır Girişi":
         col1, col2 = st.columns(2)
         
         with col1:
-            agirlik = st.number_input("⚖️ Toplam Ağırlık (kg)", min_value=0.1, value=0.0, step=10.0)
+            agirlik = st.number_input("⚖️ Toplam Ağırlık (kg)", min_value=0.0, value=0.0, step=10.0)
         
         with col2:
             kullanim_yeri = st.text_input("📍 Kullanım Yeri", value="")
