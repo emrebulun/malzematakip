@@ -124,24 +124,46 @@ class ExcelValidator:
                         break
                 except: continue
 
-        # 2. Beton Sınıfı sütunu bulunamadıysa
-        valid_classes = ['C16', 'C20', 'C25', 'C30', 'C35', 'C40', 'GRO', 'ŞAP', 'KUM']
-        if not class_col:
+        # 3. Miktar Sütunu Bulunamadıysa (Fallback)
+        if not qty_col:
+            # Sayısal sütunları tara
             for col in df.columns:
                 try:
-                    if col == date_col: continue
+                    if col in [date_col, supplier_col, waybill_col, class_col]: continue
                     if isinstance(df[col], pd.DataFrame): continue
                     
-                    sample = df[col].dropna().head(10).astype(str).upper().tolist()
-                    # İçinde C30, C35 geçen var mı?
-                    score = sum(1 for s in sample if any(vc in s for vc in valid_classes))
-                    if score > 3: # En az 3 tanesi beton sınıfına benziyorsa
-                        class_col = col
+                    # Sütunu sayıya çevirmeyi dene
+                    # Önce stringe çevirip temizle
+                    sample_raw = df[col].dropna().head(20).astype(str).tolist()
+                    clean_sample = []
+                    for s in sample_raw:
+                        s_clean = re.sub(r'[^\d.,]', '', s)
+                        # Virgül nokta düzeltmesi
+                        if ',' in s_clean and '.' in s_clean: s_clean = s_clean.replace('.', '').replace(',', '.')
+                        elif ',' in s_clean: s_clean = s_clean.replace(',', '.')
+                        if s_clean: clean_sample.append(float(s_clean))
+                    
+                    if not clean_sample: continue
+                    
+                    # Beton miktarı genelde 1 ile 25 m3 arasıdır (mikser başına)
+                    # Veya toplam döküm ise daha büyük olabilir.
+                    # Fiyat sütunuyla karışmaması için (Fiyat genelde 1000+ olur)
+                    avg = sum(clean_sample) / len(clean_sample)
+                    
+                    # Eğer ortalama değer 0.5 ile 150 arasındaysa bu Miktar olabilir
+                    # Beton fiyatı genelde 1500-3000 TL olduğu için ondan ayrılır
+                    if 0.5 < avg < 150:
+                        qty_col = col
+                        # print(f"Tahmini Miktar Sütunu: {col} (Ort: {avg})")
                         break
                 except: continue
 
         if not (date_col and class_col):
              return [], [f"Kritik sütunlar (Tarih: {date_col}, Sınıf: {class_col}) bulunamadı. Başlık satırını kontrol edin."]
+             
+        # Miktar sütunu hala yoksa hata vermek yerine uyaralım ama işlem yapamayız
+        if not qty_col:
+             return [], [f"Miktar (m³) sütunu bulunamadı. Sütun başlığında 'Miktar', 'M3' veya 'Adet' olduğundan emin olun."]
 
         valid_classes = ['C16', 'C20', 'C25', 'C30', 'C35', 'C40', 'GRO', 'ŞAP', 'KUM', 'TAS', 'TAŞ']
 
