@@ -977,7 +977,10 @@ elif page == "📂 Toplu Excel Yükleme":
                 st.dataframe(pd.DataFrame(clean_data).head(), use_container_width=True)
                 
                 if st.button(f"🚀 {len(clean_data)} Kaydı Veritabanına Aktar", type="primary"):
-                    progress_bar = st.progress(0)
+                    # Modern status container kullanımı
+                    status = st.status("Veriler aktarılıyor...", expanded=True)
+                    
+                    progress_bar = status.progress(0, text="İşlem başlatılıyor...")
                     success_count = 0
                     fail_count = 0
                     
@@ -998,15 +1001,26 @@ elif page == "📂 Toplu Excel Yükleme":
                             fail_count += 1
                             print(f"Upload Error: {e}")
                         
-                        progress_bar.progress((i + 1) / len(clean_data))
+                        # İlerlemeyi güncelle
+                        progress = (i + 1) / len(clean_data)
+                        progress_bar.progress(progress, text=f"İşleniyor: {i+1}/{len(clean_data)}")
+                    
+                    # İşlem bitti
+                    status.update(label="İşlem Tamamlandı!", state="complete", expanded=False)
+                    
+                    # Sonuç mesajları ve önbellek temizliği
+                    st.cache_data.clear()
                     
                     if fail_count == 0:
-                        st.success(f"🎉 Tebrikler! {success_count} kayıt başarıyla eklendi.")
+                        st.success(f"🎉 Harika! {success_count} kayıt başarıyla eklendi.")
                         st.balloons()
-                        st.cache_data.clear() # Cache temizle
+                        if st.button("Ana Sayfaya Dön ve Yenile"):
+                             st.rerun()
                     else:
                         st.warning(f"⚠️ İşlem Tamamlandı: {success_count} başarılı, {fail_count} başarısız.")
-                        st.error("Bazı kayıtlar mükerrer olabilir veya veritabanı reddetmiş olabilir.")
+                        st.error("Bazı kayıtlar (Mükerrer İrsaliye vb. nedenlerle) eklenemedi.")
+                        if st.button("Sayfayı Yenile"):
+                             st.rerun()
 
         except Exception as e:
             st.error(f"Dosya okuma hatası: {str(e)}")
