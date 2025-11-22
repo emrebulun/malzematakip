@@ -42,63 +42,154 @@ class ExcelValidator:
     def validate_concrete(self, df):
         cleaned_data = []
         errors = []
+        import re
         
-        # Sütun kontrolü
-        missing_cols = [col for col in self.concrete_columns.keys() if col not in df.columns]
-        if missing_cols:
-            return [], [f"Eksik Sütunlar: {', '.join(missing_cols)}"]
+        # --- BAŞLIK SATIRINI BULMA (Header Detection) ---
+        header_row_idx = 0
+        found_header = False
+        
+        for i in range(min(15, len(df))):
+            row_values = [str(v).upper().strip() for v in df.iloc[i].tolist() if pd.notna(v)]
+            keywords = ['BETON', 'TESLİM', 'MİKTAR', 'FİRMA', 'SINIF', 'CİNSİ', 'İRSALİYE']
+            match_count = sum(1 for k in keywords if any(k in rv for rv in row_values))
+            
+            if match_count >= 2:
+                header_row_idx = i
+                new_header = df.iloc[i]
+                df = df[i+1:].reset_index(drop=True)
+                df.columns = new_header
+                found_header = True
+                break
+                
+        # --- SÜTUNLARI BULMA VE TEMİZLEME ---
+        # Unnamed sütun başlıklarını temizle (Ama verileri kaybetme)
+        # Sadece tamamen boş sütunları atalım
+        df = df.dropna(axis=1, how='all')
+        cols = [str(c).upper().strip() for c in df.columns]
+        df.columns = cols
 
-        valid_classes = ['C16', 'C20', 'C25', 'C30', 'C35', 'C40', 'GRO', 'ŞAP']
-        valid_delivery = ['POMPALI', 'MİKSERLİ']
+        # Yardımcı: Sütun Bul
+        def find_col(keywords):
+            for i, col in enumerate(df.columns):
+                for kw in keywords:
+                    if kw in str(col).upper():
+                        return df.columns[i]
+            return None
+
+        # Sütun Eşleştirme
+        date_col = find_col(['TARİH', 'TARIH', 'ZAMAN'])
+        supplier_col = find_col(['FİRMA', 'TEDARİK', 'BETONCU'])
+        waybill_col = find_col(['İRSALİYE', 'IRSALIYE', 'FİŞ', 'BELGE'])
+        class_col = find_col(['SINIF', 'CİNS', 'BETON CİNSİ'])
+        qty_col = find_col(['MİKTAR', 'METREKÜP', 'M3', 'ADET'])
+        method_col = find_col(['TESLİM', 'YÖNTEM', 'POMPA'])
+        block_col = find_col(['BLOK', 'YER', 'MAHAL'])
+        notes_col = find_col(['AÇIKLAMA', 'NOT'])
+        
+        # Eksik Sütunları Telafi Etme Denemeleri
+        if not date_col:
+            # Tarih formatına benzeyen ilk sütunu bul
+            for col in df.columns:
+                sample = df[col].dropna().head(5).astype(str).tolist()
+                if any(re.search(r'\d{2}[./-]\d{2}[./-]\d{4}', s) for s in sample):
+                    date_col = col
+                    break
+
+        # Eğer miktar sütunu bulunamadıysa, sayısal değer içeren sütunlara bak
+        # Ancak beton fiyatı ile karışabilir. "M3" veya "Miktar" yoksa riskli.
+
+        if not (date_col and class_col):
+             return [], [f"Kritik sütunlar (Tarih, Beton Sınıfı) bulunamadı. Excel başlıklarını kontrol edin."]
+
+        valid_classes = ['C16', 'C20', 'C25', 'C30', 'C35', 'C40', 'GRO', 'ŞAP', 'KUM', 'TAS', 'TAŞ']
 
         for index, row in df.iterrows():
-            row_num = index + 2
+            row_num = index + 2 + (header_row_idx if found_header else 0)
             try:
-                # Temel Dönüşümler
                 data = {}
                 
+                # Boş satır kontrolü
+                if pd.isna(row[date_col]) and pd.isna(row[class_col]):
+                    continue
+
                 # Tarih
                 try:
-                    data['date'] = pd.to_datetime(row['Tarih']).strftime('%Y-%m-%d')
+                    raw_date = row[date_col]
+                    if pd.isna(raw_date): continue
+                    
+                    if isinstance(raw_date, datetime):
+                         data['date'] = raw_date.strftime('%Y-%m-%d')
+                    else:
+                        found_date = False
+                        for fmt in ['%d.%m.%Y', '%Y-%m-%d', '%d/%m/%Y', '%Y.%m.%d']:
+                            try:
+                                data['date'] = pd.to_datetime(raw_date, dayfirst=True).strftime('%Y-%m-%d')
+                                found_date = True
+                                break
+                            except:
+                                continue
+                        if not found_date: raise ValueError
                 except:
-                    raise ValueError("Tarih formatı hatalı (Beklenen: GG.AA.YYYY)")
+                    raise ValueError("Tarih formatı hatalı")
 
-                # Zorunlu Alanlar
-                if pd.isna(row['Firma']) or str(row['Firma']).strip() == '':
-                    raise ValueError("Firma adı boş olamaz")
-                data['supplier'] = str(row['Firma']).strip().upper()
+                # Firma
+                if supplier_col and pd.notna(row[supplier_col]):
+                    data['supplier'] = str(row[supplier_col]).strip().upper()
+                else:
+                    data['supplier'] = "BİLİNMEYEN FİRMA"
 
-                if pd.isna(row['İrsaliye No']) or str(row['İrsaliye No']).strip() == '':
-                    raise ValueError("İrsaliye No boş olamaz")
-                data['waybill_no'] = str(row['İrsaliye No']).strip()
+                # İrsaliye
+                if waybill_col and pd.notna(row[waybill_col]):
+                    data['waybill_no'] = str(row[waybill_col]).strip()
+                else:
+                    # Benzersiz bir irsaliye üret (Tarih + Rastgele)
+                    import random
+                    data['waybill_no'] = f"AUTO-{data['date'].replace('-','')}-{random.randint(1000,9999)}"
 
                 # Beton Sınıfı
-                c_class = str(row['Beton Sınıfı']).strip().upper().replace(" ", "")
-                if c_class not in valid_classes:
-                    raise ValueError(f"Geçersiz Beton Sınıfı: {row['Beton Sınıfı']} (Geçerli: {', '.join(valid_classes)})")
-                data['concrete_class'] = c_class
-
-                # Teslimat Şekli
-                d_method = str(row['Teslimat Şekli']).strip().upper()
-                # Varsayılan değer atama veya düzeltme
-                if "POMPA" in d_method: d_method = "POMPALI"
-                elif "MİKSER" in d_method: d_method = "MİKSERLİ"
+                if class_col:
+                    raw_class = str(row[class_col]).strip().upper().replace(" ", "")
+                    # İçinde geçerli sınıf geçiyor mu? (Örn: "C30 HAZIR BETON" -> "C30")
+                    matched_class = next((c for c in valid_classes if c in raw_class), None)
+                    if matched_class:
+                        data['concrete_class'] = matched_class
+                    else:
+                        # GROBETON -> GRO
+                        if "GRO" in raw_class: data['concrete_class'] = "GRO"
+                        else: data['concrete_class'] = "Diğer" # Veritabanı enum hatası vermesin
                 
-                if d_method not in valid_delivery:
-                    raise ValueError(f"Geçersiz Teslimat Şekli: {row['Teslimat Şekli']}")
-                data['delivery_method'] = d_method
+                # Teslimat Şekli
+                if method_col:
+                    d_method = str(row[method_col]).strip().upper()
+                    if "POMPA" in d_method: data['delivery_method'] = "POMPALI"
+                    elif "MİKSER" in d_method: data['delivery_method'] = "MİKSERLİ"
+                    else: data['delivery_method'] = "MİKSERLİ" # Varsayılan
+                else:
+                    data['delivery_method'] = "MİKSERLİ"
 
                 # Miktar
-                try:
-                    qty = float(str(row['Miktar']).replace(',', '.'))
-                    if qty <= 0: raise ValueError
-                    data['quantity_m3'] = qty
-                except:
-                    raise ValueError(f"Geçersiz Miktar: {row['Miktar']}")
+                if qty_col:
+                    try:
+                        raw_qty = str(row[qty_col])
+                        clean_qty = re.sub(r'[^\d.,]', '', raw_qty)
+                        if ',' in clean_qty and '.' in clean_qty:
+                            clean_qty = clean_qty.replace('.', '').replace(',', '.')
+                        elif ',' in clean_qty:
+                             clean_qty = clean_qty.replace(',', '.')
+                        
+                        data['quantity_m3'] = float(clean_qty)
+                    except:
+                        raise ValueError("Miktar okunamadı")
+                else:
+                    # Miktar sütunu yoksa, belki 'MİKSERLİ' sütununun yanında bir sütun vardır?
+                    # Bu dosya formatında miktar sütunu yok gibi görünüyor veya adı 'Unnamed'.
+                    # Geçici olarak 0 veya tahmin? Hata vermek en iyisi.
+                    raise ValueError("Miktar sütunu bulunamadı")
 
-                # Opsiyonel Alanlar
-                data['location_block'] = str(row['Blok']) if pd.notna(row['Blok']) else None
-                data['notes'] = str(row['Açıklama']) if pd.notna(row['Açıklama']) else None
+                if data['quantity_m3'] <= 0: raise ValueError("Miktar 0 olamaz")
+
+                data['location_block'] = str(row[block_col]) if block_col and pd.notna(row[block_col]) else None
+                data['notes'] = str(row[notes_col]) if notes_col and pd.notna(row[notes_col]) else None
 
                 cleaned_data.append(data)
 
