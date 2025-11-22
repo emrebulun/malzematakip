@@ -560,6 +560,8 @@ elif page == "📈 Detaylı Analizler":
                         color_continuous_scale='Viridis'
                     )
                     st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Henüz demir verisi yok")
     
     with tab_hasir:
         mesh_df = get_cached_mesh_logs()
@@ -612,6 +614,8 @@ elif page == "📈 Detaylı Analizler":
             )
             fig.update_traces(line_color='#00D4FF', line_width=3)
             st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Henüz hasır verisi yok")
 
 # ============================================
 # DATA ENTRY PAGES (Same as original)
