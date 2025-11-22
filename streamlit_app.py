@@ -155,7 +155,7 @@ if page == "📊 Executive Dashboard":
     # MAIN KPIs
     # ============================================
     st.markdown("## 📈 Ana Göstergeler")
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3 = st.columns(3)
     
     with col1:
         st.metric(
@@ -176,15 +176,6 @@ if page == "📊 Executive Dashboard":
             "🔲 Toplam Hasır",
             f"{mesh_summary.get('total_weight_kg', 0)/1000:,.1f} ton",
             delta=f"↑ {mesh_summary.get('total_deliveries', 0)} sevkiyat"
-        )
-    
-    with col4:
-        total_suppliers = concrete_summary.get('supplier_count', 0)
-        total_locations = concrete_summary.get('location_count', 0)
-        st.metric(
-            "🏢 Tedarikçi / Blok",
-            f"{total_suppliers} / {total_locations}",
-            delta="Aktif"
         )
     
     st.markdown("---")
