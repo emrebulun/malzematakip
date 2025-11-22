@@ -499,8 +499,9 @@ elif page == "📈 Detaylı Analizler":
             )
             fig.update_layout(showlegend=False)
             st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("Henüz beton verisi yok")
+            
+    else:
+        st.info("Henüz beton verisi yok")
 
     with tab_demir:
         with st.spinner('📊 Demir verileri analiz ediliyor...'):
