@@ -102,6 +102,36 @@ st.sidebar.markdown("---")
 st.sidebar.info("💾 Powered by Supabase")
 
 # ============================================
+# AUTHENTICATION
+# ============================================
+def check_password():
+    """Returns `True` if the user had the correct password."""
+
+    def password_entered():
+        """Checks whether a password entered by the user is correct."""
+        if st.session_state["username"] == "emre" and st.session_state["password"] == "024410emre":
+            st.session_state["password_correct"] = True
+            del st.session_state["password"]  # don't store password
+            del st.session_state["username"]
+        else:
+            st.session_state["password_correct"] = False
+
+    if "password_correct" not in st.session_state:
+        # First run, show input for password.
+        st.text_input("Kullanıcı Adı", key="username")
+        st.text_input("Şifre", type="password", on_change=password_entered, key="password")
+        return False
+    elif not st.session_state["password_correct"]:
+        # Password not correct, show input + error.
+        st.text_input("Kullanıcı Adı", key="username")
+        st.text_input("Şifre", type="password", on_change=password_entered, key="password")
+        st.error("😕 Kullanıcı adı veya şifre hatalı")
+        return False
+    else:
+        # Password correct.
+        return True
+
+# ============================================
 # EXECUTIVE DASHBOARD
 # ============================================
 
@@ -601,6 +631,9 @@ elif page == "📈 Detaylı Analizler":
 elif page == "🧱 Beton Girişi":
     st.title("🧱 Beton Teslimat Kaydı")
     
+    if not check_password():
+        st.stop()
+    
     with st.form("beton_form"):
         col1, col2 = st.columns(2)
         
@@ -638,6 +671,9 @@ elif page == "🧱 Beton Girişi":
 
 elif page == "⚙️ Demir Girişi":
     st.title("⚙️ Demir (İnşaat Demiri) Teslimat Kaydı")
+    
+    if not check_password():
+        st.stop()
     
     with st.form("demir_form"):
         st.markdown("### 📋 Genel Bilgiler")
@@ -757,6 +793,9 @@ elif page == "⚙️ Demir Girişi":
 
 elif page == "🔲 Hasır Girişi":
     st.title("🔲 Hasır (İnşaat Hasırı) Teslimat Kaydı")
+    
+    if not check_password():
+        st.stop()
     
     with st.form("hasir_form"):
         st.markdown("### 📋 Genel Bilgiler")
