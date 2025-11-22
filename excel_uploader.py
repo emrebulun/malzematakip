@@ -111,11 +111,30 @@ class ExcelValidator:
         cleaned_data = []
         errors = []
         
-        # Sütun kontrolü (Q çapları hariç temel sütunlar)
-        base_cols = ['Tarih', 'Tedarikçi', 'İrsaliye No']
-        missing_cols = [col for col in base_cols if col not in df.columns]
-        if missing_cols:
-            return [], [f"Eksik Sütunlar: {', '.join(missing_cols)}"]
+        # Esnek Sütun Eşleştirme için Regex Desenleri
+        # (Çap numarasını yakalamak için)
+        import re
+        
+        # Standart dışı başlıkları yakalamak için yardımcı fonksiyon
+        def find_columns_by_diameter(columns, diameter):
+            matches = []
+            # Örn: 10 için -> "10'luk", "10' LUK", "Q10", "filmaşin 10", "10 luk"
+            # Regex: 10 sayısını kelime sınırında veya 'Q' harfinden sonra arar
+            pattern = re.compile(rf"(^|\s|Q){diameter}(\s|'|’|l[ıi]k|l[uü]k|$)", re.IGNORECASE)
+            
+            for col in columns:
+                if pattern.search(str(col)):
+                    matches.append(col)
+            return matches
+
+        # Temel Sütun Kontrolü (Tarih ve Tedarikçi gibi)
+        # "Firma" veya "Tedarikçi" olabilir
+        supplier_col = next((col for col in df.columns if 'TEDARİK' in str(col).upper() or 'FİRMA' in str(col).upper()), None)
+        waybill_col = next((col for col in df.columns if 'İRSALİYE' in str(col).upper()), None)
+        date_col = next((col for col in df.columns if 'TARİH' in str(col).upper()), None)
+
+        if not (supplier_col and waybill_col and date_col):
+             return [], [f"Eksik Sütunlar: Tarih, Firma/Tedarikçi ve İrsaliye No sütunları bulunamadı."]
 
         for index, row in df.iterrows():
             row_num = index + 2
@@ -124,47 +143,86 @@ class ExcelValidator:
                 
                 # Tarih
                 try:
-                    data['date'] = pd.to_datetime(row['Tarih']).strftime('%Y-%m-%d')
+                    raw_date = row[date_col]
+                    if isinstance(raw_date, datetime):
+                         data['date'] = raw_date.strftime('%Y-%m-%d')
+                    else:
+                        # Farklı formatları dene
+                        for fmt in ['%d.%m.%Y', '%Y-%m-%d', '%d/%m/%Y']:
+                            try:
+                                data['date'] = pd.to_datetime(raw_date, dayfirst=True).strftime('%Y-%m-%d')
+                                break
+                            except:
+                                continue
+                        if 'date' not in data: raise ValueError
                 except:
                     raise ValueError("Tarih formatı hatalı")
 
-                # Zorunlu Alanlar
-                if pd.isna(row['Tedarikçi']) or str(row['Tedarikçi']).strip() == '':
-                    raise ValueError("Tedarikçi boş olamaz")
-                data['supplier'] = str(row['Tedarikçi']).strip().upper()
+                # Firma & İrsaliye
+                data['supplier'] = str(row[supplier_col]).strip().upper()
+                data['waybill_no'] = str(row[waybill_col]).strip()
+                
+                # Opsiyonel
+                # Etap sütununu bulmaya çalış
+                stage_col = next((col for col in df.columns if 'ETAP' in str(col).upper()), None)
+                data['project_stage'] = str(row[stage_col]) if stage_col and pd.notna(row[stage_col]) else None
+                
+                # Notlar
+                note_col = next((col for col in df.columns if 'NOT' in str(col).upper() or 'AÇIKLAMA' in str(col).upper()), None)
+                notes = str(row[note_col]) if note_col and pd.notna(row[note_col]) else ""
 
-                if pd.isna(row['İrsaliye No']) or str(row['İrsaliye No']).strip() == '':
-                    raise ValueError("İrsaliye No boş olamaz")
-                data['waybill_no'] = str(row['İrsaliye No']).strip()
-
-                # Opsiyonel Stringler
-                data['project_stage'] = str(row['Etap']) if pd.notna(row['Etap']) else None
-                data['manufacturer'] = str(row['Üretici']) if pd.notna(row['Üretici']) else None
-                data['notes'] = str(row.get('Notlar', '')) if pd.notna(row.get('Notlar')) else None
-
-                # Ağırlıklar
+                # Ağırlıklar ve Çap Eşleştirme
                 total_weight = 0
                 diameters = [8, 10, 12, 14, 16, 18, 20, 22, 25, 28, 32]
                 
                 for d in diameters:
-                    col_name = f'Q{d}'
-                    key_name = f'q{d}_kg'
+                    target_cols = find_columns_by_diameter(df.columns, d)
+                    
+                    # 24'lük Özel Durumu: 24'lükleri bul ve Q25'e ekle
+                    if d == 25:
+                        cols_24 = find_columns_by_diameter(df.columns, 24)
+                        target_cols.extend(cols_24)
+                        if cols_24:
+                            val_24 = sum(float(str(row[c]).replace('.', '').replace(',', '.')) for c in cols_24 if pd.notna(row[c]))
+                            if val_24 > 0:
+                                notes += f" | {val_24:.0f}kg Q24 dahil"
+
+                    # Sütunlardaki değerleri topla (Örn: "10'luk" + "Filmaşin 10")
                     val = 0.0
-                    if col_name in df.columns and pd.notna(row[col_name]):
-                        try:
-                            val = float(str(row[col_name]).replace(',', '.'))
-                        except:
-                            raise ValueError(f"{col_name} değeri sayısal değil")
-                    data[key_name] = val
+                    for col_name in target_cols:
+                        if pd.notna(row[col_name]):
+                            try:
+                                # 1.250,50 formatını 1250.50'ye çevir
+                                raw_val = str(row[col_name])
+                                if isinstance(row[col_name], (int, float)):
+                                    val += float(row[col_name])
+                                else:
+                                    # Binlik ayracı nokta, ondalık virgül ise
+                                    clean_val = raw_val.replace('.', '').replace(',', '.')
+                                    val += float(clean_val)
+                            except:
+                                pass # Sayısal olmayan değeri yoksay
+                    
+                    data[f'q{d}_kg'] = val
                     total_weight += val
 
-                if total_weight <= 0:
-                    raise ValueError("Toplam ağırlık 0 olamaz. En az bir çap girilmelidir.")
+                if total_weight <= 1: # 0 veya 1'den küçükse hata (boş satır olabilir)
+                     # Sadece toplam satırı ise (Excel altındaki toplam) atla
+                    if "TOPLAM" in str(data['supplier']):
+                        continue
+                    raise ValueError("Toplam ağırlık 0 olamaz.")
                 
                 data['total_weight_kg'] = total_weight
+                data['notes'] = notes.strip()
+                
+                if data['notes'].startswith('|'): data['notes'] = data['notes'][1:].strip()
+
                 cleaned_data.append(data)
 
             except Exception as e:
+                # Toplam satırını sessizce geç
+                if "TOPLAM" in str(row.values):
+                    continue
                 errors.append(f"Satır {row_num}: {str(e)}")
 
         return cleaned_data, errors
