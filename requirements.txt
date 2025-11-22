@@ -1,0 +1,10 @@
+streamlit
+pandas
+plotly
+supabase
+toml
+requests
+streamlit-lottie
+streamlit-option-menu
+streamlit-extras
+openpyxl

@@ -1,0 +1,81 @@
+﻿============================================================
+BETON FILE - CHECKING SHEETS
+============================================================
+Sheet names: ['¦CMAL', 'Sayfa1', 'Sayfa2']
+
+--- Sheet: ¦CMAL ---
+Shape: (10, 18)
+   Unnamed: 0   Unnamed: 1   Unnamed: 2  ...  Unnamed: 15 Unnamed: 16 Unnamed: 17
+0         NaN          NaN  Beton Cinsi  ...  Beton Fiyat         NaN         NaN
+1         NaN  C16M¦KSERL¦          C16  ...          C16    M¦KSERL¦      2000.0
+2         NaN   C16POMPALI          C16  ...          C16     POMPALI      2000.0
+3         NaN  C20M¦KSERL¦          C20  ...          C20    M¦KSERL¦      1750.0
+4         NaN   C20POMPALI          C20  ...          C20     POMPALI      1900.0
+
+[5 rows x 18 columns]
+
+--- Sheet: Sayfa1 ---
+Shape: (10, 20)
+   Unnamed: 0  ... AÃIKLAMA2+J2805O2G1:O2469
+0         NaN  ...                       NaN
+1         NaN  ...                       NaN
+2         NaN  ...                       NaN
+3         NaN  ...                       NaN
+4         NaN  ...                       NaN
+
+[5 rows x 20 columns]
+
+--- Sheet: Sayfa2 ---
+Shape: (10, 11)
+   Unnamed: 0           Unnamed: 1  ... Unnamed: 9    Unnamed: 10
+0         NaN                  NaN  ...        NaN            NaN
+1         NaN                TAR¦H  ...       BLOK       AÃIKLAMA
+2         NaN  2025-07-23 00:00:00  ...        GK1  2.KAT 1.KISIM
+3         NaN  2025-07-23 00:00:00  ...        GK1  2.KAT 1.KISIM
+4         NaN  2025-07-23 00:00:00  ...        GK1  2.KAT 1.KISIM
+
+[5 rows x 11 columns]
+
+
+============================================================
+DEMIR FILE - First 15 rows
+============================================================
+    Unnamed: 0      TAR¦H    ETAP  ¦RSAL¦YE NO  ... 24' L▄K 25' L¦K  28' L¦K  NOT
+0          NaN 2025-06-10  3.ETAP         1551  ...     NaN     NaN      NaN  NaN
+1          NaN 2025-06-10  3.ETAP         1552  ...     NaN     NaN      NaN  NaN
+2          NaN 2025-06-11  3.ETAP         1567  ...     NaN     NaN      NaN  NaN
+3          NaN 2025-06-11  3.ETAP         1568  ...     NaN     NaN      NaN  NaN
+4          NaN 2025-06-11  3.ETAP         1571  ...     NaN     NaN      NaN  NaN
+5          NaN 2025-06-11  3.ETAP         1572  ...     NaN     NaN      NaN  NaN
+6          NaN 2025-06-11  3.ETAP         1574  ...     NaN     NaN      NaN  NaN
+7          NaN 2025-06-11  3.ETAP         1576  ...     NaN     NaN      NaN  NaN
+8          NaN 2025-06-11  3.ETAP         1577  ...     NaN     NaN      NaN  NaN
+9          NaN 2025-06-11  3.ETAP         1580  ...     NaN     NaN      NaN  NaN
+10         NaN 2025-06-12  3.ETAP         1585  ...     NaN     NaN      NaN  NaN
+11         NaN 2025-06-12  3.ETAP         1586  ...     NaN     NaN      NaN  NaN
+12         NaN 2025-06-12  3.ETAP         8709  ...     NaN     NaN      NaN  NaN
+13         NaN 2025-06-12  3.ETAP         8720  ...     NaN     NaN      NaN  NaN
+14         NaN 2025-06-13  3.ETAP         1602  ...     NaN     NaN      NaN  NaN
+
+[15 rows x 20 columns]
+
+
+============================================================
+HASIR FILE - First 15 rows
+============================================================
+        TAR¦H  F¦RMA  ¦RSAL¦YE NO  ADET  AºIRLIK
+0  2025-06-25  DOFER       1067.0   980  27260.0
+1         NaT  DOFER          NaN   200      NaN
+2  2025-06-25  DOFER       1068.0   956  26860.0
+3         NaT  DOFER          NaN   200      NaN
+4  2025-06-27  DOFER       1090.0    56  27760.0
+5  2025-06-27  DOFER          NaN   560      NaN
+6  2025-06-27  DOFER          NaN   144      NaN
+7  2025-06-27  DOFER          NaN   400      NaN
+8  2025-06-27  DOFER       1091.0   280  27640.0
+9  2025-06-27  DOFER          NaN   746      NaN
+10 2025-06-30  DOFER       1104.0   168  27340.0
+11 2025-06-30  DOFER          NaN    76      NaN
+12 2025-06-30  DOFER          NaN    56      NaN
+13 2025-06-30  DOFER          NaN   350      NaN
+14 2025-06-30  DOFER          NaN   560      NaN

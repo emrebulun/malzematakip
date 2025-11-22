@@ -1,0 +1,62 @@
+﻿============================================================
+ANALYZING BETON EXCEL FILE
+============================================================
+
+Sheet names: ['¦CMAL', 'Sayfa1', 'Sayfa2']
+
+============================================================
+SHEET: ¦CMAL
+============================================================
+
+--- Header at row 0 ---
+Shape: (10, 18)
+Columns: ['Unnamed: 0', 'Unnamed: 1', 'Unnamed: 2', 'Unnamed: 3', 'Unnamed: 4', 'Unnamed: 5', 'Unnamed: 6', 'Unnamed: 7', 'Unnamed: 8', 'Unnamed: 9', 'Unnamed: 10', 'Unnamed: 11', 'Unnamed: 12', 'Unnamed: 13', 'Unnamed: 14', 'Unnamed: 15', 'Unnamed: 16', 'Unnamed: 17']
+
+--- Header at row 1 ---
+Shape: (10, 18)
+Columns: ['Unnamed: 0', 'Unnamed: 1', 'Beton Cinsi', 'TESL¦M ÌEKL¦', 'M¦KTAR', 'TUTAR', 'Unnamed: 6', 'Unnamed: 7', 'FATURA NO', 'Unnamed: 9', 'Unnamed: 10', 'Unnamed: 11', 'Unnamed: 12', 'Unnamed: 13', 'Unnamed: 14', 'Beton Fiyat', 'Unnamed: 16', 'Unnamed: 17']
+
+--- Header at row 2 ---
+Shape: (10, 18)
+Columns: ['Unnamed: 0', 'C16M¦KSERL¦', 'C16', 'M¦KSERL¦', 40, 80000, 'Unnamed: 6', 'Unnamed: 7', 2815, 'Unnamed: 9', 'M¦KTAR', 'TUTAR', 'Unnamed: 12', 'Unnamed: 13', 'C16M¦KSERL¦.1', 'C16.1', 'M¦KSERL¦.1', 2000]
+
+============================================================
+SHEET: Sayfa1
+============================================================
+
+--- Header at row 0 ---
+Shape: (10, 20)
+Columns: ['Unnamed: 0', 'S³tun1', 'TAR¦H', 'F¦RMA', '¦RSAL¦YE NO', 'S³tun2', 'FATURA NO', 'PERSONEL', 'BETON SINIFI', 'TESL¦M ÌEKL¦', 'M¦KTAR', 'BLOK', 'AÃIKLAMA', '1.TARTIM', '2.TARTIM', 'FARK', 'SORUMLU K¦Ì¦', 'AÃIKLAMA2+J2805O2G1:O2467', 'AÃIKLAMA2+J2805O2G1:O2468', 'AÃIKLAMA2+J2805O2G1:O2469']
+
+--- Header at row 1 ---
+Shape: (10, 20)
+Columns: ['Unnamed: 0', 'GRO BETONM¦KSERL¦', datetime.datetime(2025, 4, 21, 0, 0), 'Unnamed: 3', 'AK12025000020098', 'Unnamed: 5', 'Unnamed: 6', 'Unnamed: 7', 'GRO BETON', 'M¦KSERL¦', 7.5, 'Unnamed: 11', '3.ETAP DEPO ZEM¦N BETON', 'Unnamed: 13', 'Unnamed: 14', 'Unnamed: 15', 'Unnamed: 16', 'Unnamed: 17', 'Unnamed: 18', 'Unnamed: 19']
+
+--- Header at row 2 ---
+Shape: (10, 20)
+Columns: ['Unnamed: 0', 'GRO BETONM¦KSERL¦', datetime.datetime(2025, 4, 21, 0, 0), 'Unnamed: 3', 'AK12025000020115', 'Unnamed: 5', 'Unnamed: 6', 'Unnamed: 7', 'GRO BETON', 'M¦KSERL¦', 7.5, 'Unnamed: 11', '3.ETAP DEPO ZEM¦N BETON', 'Unnamed: 13', 'Unnamed: 14', 'Unnamed: 15', 'Unnamed: 16', 'Unnamed: 17', 'Unnamed: 18', 'Unnamed: 19']
+
+============================================================
+SHEET: Sayfa2
+============================================================
+
+--- Header at row 0 ---
+Shape: (10, 11)
+Columns: ['Unnamed: 0', 'Unnamed: 1', 'Unnamed: 2', 'Unnamed: 3', 'Unnamed: 4', 'Unnamed: 5', 'Unnamed: 6', 'Unnamed: 7', 'Unnamed: 8', 'Unnamed: 9', 'Unnamed: 10']
+
+--- Header at row 1 ---
+Shape: (9, 11)
+Columns: ['Unnamed: 0', 'Unnamed: 1', 'Unnamed: 2', 'Unnamed: 3', 'Unnamed: 4', 'Unnamed: 5', 'Unnamed: 6', 'Unnamed: 7', 'Unnamed: 8', 'Unnamed: 9', 'Unnamed: 10']
+
+--- Header at row 2 ---
+Shape: (10, 11)
+Columns: ['Unnamed: 0', 'TAR¦H', 'F¦RMA', '¦RSAL¦YE NO', 'S³tun2', 'FATURA NO', 'BETON SINIFI', 'TESL¦M ÌEKL¦', 'M¦KTAR', 'BLOK', 'AÃIKLAMA']
+
+
+============================================================
+SEARCHING FOR TOTAL = 54,124.80
+============================================================
+
+============================================================
+ANALYSIS COMPLETE
+============================================================

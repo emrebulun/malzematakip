@@ -1,0 +1,12 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Streamlit secrets (ÇOK ÖNEMLİ: Şifreleri asla yükleme)
+.streamlit/secrets.toml
+.env
+venv/
+.vscode/
+*.csv
+*.xlsx
