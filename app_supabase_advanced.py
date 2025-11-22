@@ -458,10 +458,10 @@ elif page == "📈 Detaylı Analizler":
                 color_continuous_scale='Greens',
                 labels={'concrete_class': 'Sınıf', 'quantity_m3': 'Miktar (m³)'}
             )
-                fig.update_layout(showlegend=False, height=400)
-                st.plotly_chart(fig, use_container_width=True)
-            
-            st.markdown("---")
+            fig.update_layout(showlegend=False, height=400)
+            st.plotly_chart(fig, use_container_width=True)
+        
+        st.markdown("---")
             
             # Detailed statistics
             st.markdown("## 📊 İstatistiksel Özetler")
