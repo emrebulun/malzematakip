@@ -132,11 +132,11 @@ def check_password():
         return True
 
 # ============================================
-# EXECUTIVE DASHBOARD
+# ANA SAYFA
 # ============================================
 
-if page == "📊 Executive Dashboard":
-    st.title("📊 Executive Dashboard - Şantiye 997")
+if page == "📊 Ana Sayfa":
+    st.title("📊 Şantiye 997 - Yönetim Paneli")
     st.markdown("### 🏗️ Gerçek Zamanlı Malzeme Takip Sistemi")
     
     # Get summaries (cached - fast after first load)
