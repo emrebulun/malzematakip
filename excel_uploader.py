@@ -44,71 +44,104 @@ class ExcelValidator:
         errors = []
         import re
         
-        # --- BAŞLIK SATIRINI BULMA (Header Detection) ---
+        # --- BAŞLIK SATIRINI BULMA (Gelişmiş) ---
         header_row_idx = 0
         found_header = False
         
-        for i in range(min(15, len(df))):
+        # İlk 30 satırı tara ve en iyi başlık adayını bul
+        best_score = 0
+        best_idx = 0
+        
+        keywords = ['BETON', 'TESLİM', 'MİKTAR', 'FİRMA', 'SINIF', 'CİNSİ', 'İRSALİYE', 'TARİH', 'PLAKA', 'BLOK']
+        
+        for i in range(min(30, len(df))):
             row_values = [str(v).upper().strip() for v in df.iloc[i].tolist() if pd.notna(v)]
-            keywords = ['BETON', 'TESLİM', 'MİKTAR', 'FİRMA', 'SINIF', 'CİNSİ', 'İRSALİYE']
-            match_count = sum(1 for k in keywords if any(k in rv for rv in row_values))
+            # Satırdaki anahtar kelime sayısı
+            score = sum(1 for k in keywords if any(k in rv for rv in row_values))
             
-            if match_count >= 2:
-                header_row_idx = i
-                new_header = df.iloc[i]
-                df = df[i+1:].reset_index(drop=True)
-                df.columns = new_header
-                found_header = True
-                break
-                
+            if score > best_score:
+                best_score = score
+                best_idx = i
+        
+        # Eğer en az 2 anahtar kelime bulduysak, o satırı başlık yap
+        if best_score >= 2:
+            header_row_idx = best_idx
+            new_header = df.iloc[best_idx]
+            df = df[best_idx+1:].reset_index(drop=True)
+            df.columns = new_header
+            found_header = True
+            
         # --- SÜTUNLARI BULMA VE TEMİZLEME ---
-        # Unnamed sütun başlıklarını temizle (Ama verileri kaybetme)
-        # Sadece tamamen boş sütunları atalım
-        df = df.dropna(axis=1, how='all')
-        cols = [str(c).upper().strip() for c in df.columns]
-        df.columns = cols
+        # Unnamed sütunları atma, belki veri vardır.
+        # Ama sütun isimlerini string yapalım
+        df.columns = [str(c).upper().strip() for c in df.columns]
 
-        # Yardımcı: Sütun Bul
-        def find_col(keywords):
+        # Yardımcı: Sütun Bul (Regex destekli)
+        def find_col(patterns):
             for i, col in enumerate(df.columns):
-                for kw in keywords:
-                    if kw in str(col).upper():
+                for p in patterns:
+                    if re.search(p, str(col), re.IGNORECASE):
                         return df.columns[i]
             return None
 
-        # Sütun Eşleştirme
-        date_col = find_col(['TARİH', 'TARIH', 'ZAMAN'])
-        supplier_col = find_col(['FİRMA', 'TEDARİK', 'BETONCU'])
-        waybill_col = find_col(['İRSALİYE', 'IRSALIYE', 'FİŞ', 'BELGE'])
-        class_col = find_col(['SINIF', 'CİNS', 'BETON CİNSİ'])
-        qty_col = find_col(['MİKTAR', 'METREKÜP', 'M3', 'ADET'])
-        method_col = find_col(['TESLİM', 'YÖNTEM', 'POMPA'])
-        block_col = find_col(['BLOK', 'YER', 'MAHAL'])
-        notes_col = find_col(['AÇIKLAMA', 'NOT'])
+        # Sütun Eşleştirme (Regex ile daha esnek)
+        # Tarih: TARİH, TARIH veya DATE
+        date_col = find_col([r'TAR[İI]H', r'DATE', r'ZAMAN'])
         
-        # Eksik Sütunları Telafi Etme Denemeleri
+        # Firma: FİRMA, TEDARİK, BETONCU, CARİ
+        supplier_col = find_col([r'F[İI]RMA', r'TEDAR[İI]K', r'BETONCU', r'CAR[İI]'])
+        
+        # İrsaliye: İRSALİYE, FİŞ, BELGE
+        waybill_col = find_col([r'[İI]RSAL[İI]YE', r'F[İI][ŞS]', r'BELGE'])
+        
+        # Beton Sınıfı: SINIF, CİNS, DAYANIM
+        class_col = find_col([r'SINIF', r'C[İI]NS', r'DAYANIM', r'BETON'])
+        
+        # Miktar: MİKTAR, M3, ADET, METREKÜP
+        qty_col = find_col([r'M[İI]KTAR', r'M3', r'ADET', r'METREK'])
+        
+        # Teslimat: TESLİM, YÖNTEM, POMPA
+        method_col = find_col([r'TESL[İI]M', r'Y[ÖO]NTEM', r'ARAÇ'])
+        
+        # Blok: BLOK, YER, MAHAL
+        block_col = find_col([r'BLOK', r'YER', r'MAHAL', r'KONUM'])
+        
+        # Notlar
+        notes_col = find_col([r'AÇIKLAMA', r'NOT', r'DETAY'])
+        
+        # --- EKSİK SÜTUN KURTARMA (Fallback) ---
+        
+        # 1. Tarih sütunu bulunamadıysa, veriye bakarak bul
         if not date_col:
-            # Tarih formatına benzeyen ilk sütunu bul
             for col in df.columns:
-                # Güvenli sütun seçimi (Duplicate column names hatası almamak için iloc kullanabiliriz ama iterasyonda col name kullanıyoruz)
-                # Eğer col ismi unique değilse df[col] DataFrame döner.
                 try:
-                    col_data = df[col]
-                    if isinstance(col_data, pd.DataFrame):
-                        col_data = col_data.iloc[:, 0] # İlkini al
-                    
-                    sample = col_data.dropna().head(5).astype(str).tolist()
-                    if any(re.search(r'\d{2}[./-]\d{2}[./-]\d{4}', s) for s in sample):
+                    # İlk 10 dolu satıra bak
+                    if isinstance(df[col], pd.DataFrame): continue # Duplicate column
+                    sample = df[col].dropna().head(10).astype(str).tolist()
+                    # Regex: GG.AA.YYYY veya YYYY-MM-DD
+                    if any(re.search(r'(\d{2}[./-]\d{2}[./-]\d{4})|(\d{4}-\d{2}-\d{2})', s) for s in sample):
                         date_col = col
                         break
-                except:
-                    continue
+                except: continue
 
-        # Eğer miktar sütunu bulunamadıysa, sayısal değer içeren sütunlara bak
-        # Ancak beton fiyatı ile karışabilir. "M3" veya "Miktar" yoksa riskli.
+        # 2. Beton Sınıfı sütunu bulunamadıysa
+        valid_classes = ['C16', 'C20', 'C25', 'C30', 'C35', 'C40', 'GRO', 'ŞAP', 'KUM']
+        if not class_col:
+            for col in df.columns:
+                try:
+                    if col == date_col: continue
+                    if isinstance(df[col], pd.DataFrame): continue
+                    
+                    sample = df[col].dropna().head(10).astype(str).upper().tolist()
+                    # İçinde C30, C35 geçen var mı?
+                    score = sum(1 for s in sample if any(vc in s for vc in valid_classes))
+                    if score > 3: # En az 3 tanesi beton sınıfına benziyorsa
+                        class_col = col
+                        break
+                except: continue
 
         if not (date_col and class_col):
-             return [], [f"Kritik sütunlar (Tarih, Beton Sınıfı) bulunamadı. Excel başlıklarını kontrol edin."]
+             return [], [f"Kritik sütunlar (Tarih: {date_col}, Sınıf: {class_col}) bulunamadı. Başlık satırını kontrol edin."]
 
         valid_classes = ['C16', 'C20', 'C25', 'C30', 'C35', 'C40', 'GRO', 'ŞAP', 'KUM', 'TAS', 'TAŞ']
 
