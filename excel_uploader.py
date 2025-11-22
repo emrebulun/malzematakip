@@ -130,14 +130,9 @@ class ExcelValidator:
             
             if match_count >= 2:
                 header_row_idx = i
-                # Başlık satırını alıp dataframe'i yeniden kuralım
-                # i. satır başlık olacak, i+1'den sonrası veri
-                df = pd.read_excel(uploaded_file if 'uploaded_file' in locals() else df, header=i)
-                # Eğer uploaded_file yoksa (df zaten okunmuşsa) manuel düzelt:
-                # Not: Streamlit'te uploaded_file nesnesi tekrar okunamaz (seek(0) gerekir).
-                # Bu yüzden manuel shift yapalım:
                 
-                # Bu blok Streamlit içinde çalışacağı için df üzerinden gidiyoruz
+                # Düzeltme: Dosyayı tekrar okumak yerine mevcut DataFrame'i kullan
+                # i. satırı başlık yap, i+1'den sonrasını veri olarak al
                 new_header = df.iloc[i]
                 df = df[i+1:].reset_index(drop=True)
                 df.columns = new_header
