@@ -429,76 +429,76 @@ elif page == "📈 Detaylı Analizler":
                 )
                 fig.update_layout(showlegend=False, height=400)
                 st.plotly_chart(fig, use_container_width=True)
-        
-        with col2:
-            st.markdown("### 📅 En Yoğun Günler")
-            busiest_days = concrete_df.groupby('date')['quantity_m3'].sum().nlargest(10).reset_index()
-            fig = px.bar(
-                busiest_days,
-                x='date',
-                y='quantity_m3',
-                title="En Yoğun 10 Gün",
-                color='quantity_m3',
-                color_continuous_scale='Reds',
-                labels={'date': 'Tarih', 'quantity_m3': 'Miktar (m³)'}
-            )
-            fig.update_layout(showlegend=False, height=400)
-            st.plotly_chart(fig, use_container_width=True)
-        
-        with col3:
-            st.markdown("### 🧪 Beton Sınıfları")
-            top_classes = concrete_df.groupby('concrete_class')['quantity_m3'].sum().nlargest(10).reset_index()
-            fig = px.bar(
-                top_classes,
-                y='concrete_class',
-                x='quantity_m3',
-                orientation='h',
-                title="En Çok Kullanılan 10 Sınıf",
-                color='quantity_m3',
-                color_continuous_scale='Greens',
-                labels={'concrete_class': 'Sınıf', 'quantity_m3': 'Miktar (m³)'}
-            )
-            fig.update_layout(showlegend=False, height=400)
-            st.plotly_chart(fig, use_container_width=True)
-        
-        st.markdown("---")
-        
-        # Detailed statistics
-        st.markdown("## 📊 İstatistiksel Özetler")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("### 📈 Miktar Dağılımı")
-            fig = px.histogram(
-                concrete_df,
-                x='quantity_m3',
-                nbins=50,
-                title="Beton Miktar Dağılımı",
-                labels={'quantity_m3': 'Miktar (m³)', 'count': 'Frekans'}
-            )
-            fig.update_traces(marker_color='#FF6B00')
-            st.plotly_chart(fig, use_container_width=True)
             
-            # Statistics
-            st.markdown("**İstatistikler:**")
-            st.write(f"- **Ortalama:** {concrete_df['quantity_m3'].mean():.2f} m³")
-            st.write(f"- **Medyan:** {concrete_df['quantity_m3'].median():.2f} m³")
-            st.write(f"- **Std Sapma:** {concrete_df['quantity_m3'].std():.2f} m³")
-            st.write(f"- **Min:** {concrete_df['quantity_m3'].min():.2f} m³")
-            st.write(f"- **Max:** {concrete_df['quantity_m3'].max():.2f} m³")
-        
-        with col2:
-            st.markdown("### 📦 Box Plot Analizi")
-            fig = px.box(
-                concrete_df,
-                y='quantity_m3',
-                x='concrete_class',
-                title="Beton Sınıfına Göre Miktar Dağılımı",
-                color='concrete_class'
-            )
-            fig.update_layout(showlegend=False)
-            st.plotly_chart(fig, use_container_width=True)
+            with col2:
+                st.markdown("### 📅 En Yoğun Günler")
+                busiest_days = concrete_df.groupby('date')['quantity_m3'].sum().nlargest(10).reset_index()
+                fig = px.bar(
+                    busiest_days,
+                    x='date',
+                    y='quantity_m3',
+                    title="En Yoğun 10 Gün",
+                    color='quantity_m3',
+                    color_continuous_scale='Reds',
+                    labels={'date': 'Tarih', 'quantity_m3': 'Miktar (m³)'}
+                )
+                fig.update_layout(showlegend=False, height=400)
+                st.plotly_chart(fig, use_container_width=True)
+            
+            with col3:
+                st.markdown("### 🧪 Beton Sınıfları")
+                top_classes = concrete_df.groupby('concrete_class')['quantity_m3'].sum().nlargest(10).reset_index()
+                fig = px.bar(
+                    top_classes,
+                    y='concrete_class',
+                    x='quantity_m3',
+                    orientation='h',
+                    title="En Çok Kullanılan 10 Sınıf",
+                    color='quantity_m3',
+                    color_continuous_scale='Greens',
+                    labels={'concrete_class': 'Sınıf', 'quantity_m3': 'Miktar (m³)'}
+                )
+                fig.update_layout(showlegend=False, height=400)
+                st.plotly_chart(fig, use_container_width=True)
+            
+            st.markdown("---")
+            
+            # Detailed statistics
+            st.markdown("## 📊 İstatistiksel Özetler")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("### 📈 Miktar Dağılımı")
+                fig = px.histogram(
+                    concrete_df,
+                    x='quantity_m3',
+                    nbins=50,
+                    title="Beton Miktar Dağılımı",
+                    labels={'quantity_m3': 'Miktar (m³)', 'count': 'Frekans'}
+                )
+                fig.update_traces(marker_color='#FF6B00')
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # Statistics
+                st.markdown("**İstatistikler:**")
+                st.write(f"- **Ortalama:** {concrete_df['quantity_m3'].mean():.2f} m³")
+                st.write(f"- **Medyan:** {concrete_df['quantity_m3'].median():.2f} m³")
+                st.write(f"- **Std Sapma:** {concrete_df['quantity_m3'].std():.2f} m³")
+                st.write(f"- **Min:** {concrete_df['quantity_m3'].min():.2f} m³")
+                st.write(f"- **Max:** {concrete_df['quantity_m3'].max():.2f} m³")
+            
+            with col2:
+                st.markdown("### 📦 Box Plot Analizi")
+                fig = px.box(
+                    concrete_df,
+                    y='quantity_m3',
+                    x='concrete_class',
+                    title="Beton Sınıfına Göre Miktar Dağılımı",
+                    color='concrete_class'
+                )
+                fig.update_layout(showlegend=False)
+                st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("Henüz beton verisi yok")
 
