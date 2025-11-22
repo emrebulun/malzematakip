@@ -119,50 +119,65 @@ class ExcelValidator:
         header_row_idx = 0
         found_header = False
         
-        # İlk 10 satırı kontrol et
-        for i in range(min(10, len(df))):
-            row_values = df.iloc[i].astype(str).str.upper().tolist()
-            # Bir satırda hem TARİH hem de (FİRMA veya TEDARİK) geçiyorsa o başlık satırıdır
-            has_date = any('TARİH' in v for v in row_values)
-            has_supplier = any('FİRMA' in v or 'TEDARİK' in v or 'FİRMASI' in v for v in row_values)
+        # İlk 15 satırı kontrol et
+        for i in range(min(15, len(df))):
+            # Satırdaki değerleri string'e çevirip birleştir, içinde anahtar kelimeler var mı bak
+            row_values = [str(v).upper().strip() for v in df.iloc[i].tolist() if pd.notna(v)]
             
-            if has_date and has_supplier:
-                header_row_idx = i + 1 # pandas okurken 0. satırı header aldıysa, bizim bulduğumuz i indexi
-                # Eğer i > 0 ise dataframe'i yeniden okumamız veya ötelememiz gerekir
-                # Ancak kullanıcıya pratik olması için dataframe'i burada düzeltelim
-                if i > 0:
-                    # Başlık satırını alıp dataframe'i yeniden kuralım
-                    new_header = df.iloc[i]
-                    df = df[i+1:].reset_index(drop=True)
-                    df.columns = new_header
+            # Anahtar kelimelerden en az 2'si varsa bu başlık satırıdır
+            keywords = ['TARİH', 'FİRMA', 'TEDARİK', 'İRSALİYE', 'IRSALIYE', 'ETAP', 'AÇIKLAMA', 'NOT']
+            match_count = sum(1 for k in keywords if any(k in rv for rv in row_values))
+            
+            if match_count >= 2:
+                header_row_idx = i
+                # Başlık satırını alıp dataframe'i yeniden kuralım
+                # i. satır başlık olacak, i+1'den sonrası veri
+                df = pd.read_excel(uploaded_file if 'uploaded_file' in locals() else df, header=i)
+                # Eğer uploaded_file yoksa (df zaten okunmuşsa) manuel düzelt:
+                # Not: Streamlit'te uploaded_file nesnesi tekrar okunamaz (seek(0) gerekir).
+                # Bu yüzden manuel shift yapalım:
+                
+                # Bu blok Streamlit içinde çalışacağı için df üzerinden gidiyoruz
+                new_header = df.iloc[i]
+                df = df[i+1:].reset_index(drop=True)
+                df.columns = new_header
                 found_header = True
                 break
         
         if not found_header:
-             # Bulamazsa varsayılan ilk satırı kullanır, ama muhtemelen hata verecektir.
+             # Bulamazsa varsayılan ilk satırı kullanır
              pass
-
-        # --- SÜTUNLARI BULMA ---
+             
+        # --- SÜTUNLARI BULMA VE TEMİZLEME ---
+        # Unnamed sütunları temizle ve boşlukları al
+        df = df.loc[:, ~df.columns.astype(str).str.contains('^Unnamed')]
         cols = [str(c).upper().strip() for c in df.columns]
-        
+        df.columns = cols # Temizlenmiş başlıkları geri yükle
+
         # Yardımcı: Bir kelime içeren sütun ismini bul
         def find_col(keywords):
-            for i, col in enumerate(cols):
+            for i, col in enumerate(df.columns):
                 for kw in keywords:
-                    if kw in col:
+                    if kw in str(col).upper():
                         return df.columns[i]
             return None
 
-        supplier_col = find_col(['TEDARİK', 'FİRMA', 'FİRMASI', 'CARİ'])
+        supplier_col = find_col(['TEDARİK', 'FİRMA', 'FİRMASI', 'CARİ', 'UNVAN'])
         waybill_col = find_col(['İRSALİYE', 'IRSALIYE', 'FİŞ', 'BELGE'])
         date_col = find_col(['TARİH', 'TARIH', 'ZAMAN'])
 
-        if not (supplier_col and waybill_col and date_col):
+        # Demir dosyasında Firma/Tedarikçi sütunu yoksa, İrsaliye'den önceki veya sonraki sütun olabilir mi?
+        # Veya görseldeki gibi sadece tarih, etap, irsaliye var, firma sütunu unutulmuş olabilir mi?
+        # Eğer Firma yoksa "BİLİNMEYEN" olarak devam edelim, kullanıcıya hata verdirmeyelim (Geçici Çözüm)
+        if not supplier_col:
+            # Belki sütun adı boştur? İlk string içeren sütunu firma sayabiliriz ama riskli.
+            pass
+
+        if not (waybill_col and date_col):
              missing = []
-             if not supplier_col: missing.append("Firma/Tedarikçi")
              if not waybill_col: missing.append("İrsaliye No")
              if not date_col: missing.append("Tarih")
-             return [], [f"Sütunlar bulunamadı: {', '.join(missing)}. Excel başlık satırını kontrol edin."]
+             return [], [f"Kritik sütunlar bulunamadı: {', '.join(missing)}. Excel başlık satırını kontrol edin (Tarih, İrsaliye)."]
 
         # Esnek Sütun Eşleştirme (Çap numarasını yakalamak için)
         def find_columns_by_diameter(columns, diameter):
@@ -205,7 +220,10 @@ class ExcelValidator:
                     raise ValueError(f"Tarih formatı hatalı: {row[date_col]}")
 
                 # Firma & İrsaliye
-                data['supplier'] = str(row[supplier_col]).strip().upper()
+                if supplier_col:
+                    data['supplier'] = str(row[supplier_col]).strip().upper()
+                else:
+                    data['supplier'] = "BİLİNMEYEN TEDARİKÇİ" # Firma sütunu yoksa
                 
                 # İrsaliye boşsa "BELİRTİLMEDİ" yaz veya hata ver (tercihe göre)
                 # Mevcut veritabanı yapısında NOT NULL olduğu için hata vermeli veya doldurmalı
