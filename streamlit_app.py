@@ -954,8 +954,28 @@ elif page == "📂 Toplu Excel Yükleme":
 
     if uploaded_file:
         try:
-            df = pd.read_excel(uploaded_file)
-            st.info(f"📄 {len(df)} satır okundu. Kontrol ediliyor...")
+            # Excel dosyasını yükle (Tüm sayfaları kontrol et)
+            xl = pd.ExcelFile(uploaded_file)
+            sheet_names = xl.sheet_names
+            
+            # Hangi sayfayı okuyacağız?
+            # Kullanıcıya sormak yerine, içinde anahtar kelimeler geçen sayfayı bulalım
+            target_sheet = sheet_names[0] # Varsayılan ilk sayfa
+            
+            # Eğer "Sayfa1" veya "Data" gibi isimler varsa öncelik ver
+            priority_sheets = ['Sayfa1', 'Sayfa 1', 'Veri', 'Data', 'Beton', 'Demir', 'Hasır']
+            for p in priority_sheets:
+                # Büyük/küçük harf duyarsız ara
+                match = next((s for s in sheet_names if p.lower() in s.lower()), None)
+                if match:
+                    target_sheet = match
+                    break
+            
+            # Eğer kullanıcı manuel seçmek isterse diye seçenek ekleyebiliriz ama şimdilik otomatize edelim
+            # Belki ileride selectbox eklenir: st.selectbox("Sayfa Seçiniz", sheet_names)
+            
+            df = pd.read_excel(uploaded_file, sheet_name=target_sheet)
+            st.info(f"📄 '{target_sheet}' sayfası okunuyor ({len(df)} satır)...")
 
             clean_data = []
             errors = []
