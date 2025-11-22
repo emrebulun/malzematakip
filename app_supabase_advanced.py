@@ -42,35 +42,35 @@ def init_db():
     return get_db_manager_rest()
 
 # Cache data functions for performance
-@st.cache_data(ttl=300)  # Cache for 5 minutes
+@st.cache_data(ttl=600)  # Cache for 10 minutes
 def get_cached_concrete_summary():
     return db.get_concrete_summary()
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=600)
 def get_cached_rebar_summary():
     return db.get_rebar_summary()
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=600)
 def get_cached_mesh_summary():
     return db.get_mesh_summary()
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=600)
 def get_cached_concrete_logs():
     return db.get_concrete_logs()
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=600)
 def get_cached_rebar_logs():
     return db.get_rebar_logs()
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=600)
 def get_cached_mesh_logs():
     return db.get_mesh_logs()
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=600)
 def get_cached_concrete_by_supplier():
     return db.get_concrete_by_supplier()
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=600)
 def get_cached_concrete_by_location():
     return db.get_concrete_by_location()
 
@@ -137,19 +137,17 @@ def check_password():
 
 if page == "📊 Executive Dashboard":
     st.title("📊 Executive Dashboard - Şantiye 997")
-    st.markdown("### 🏗️ Gerçek Zamanlı Malzeme Takip ve Analiz Sistemi")
+    st.markdown("### 🏗️ Gerçek Zamanlı Malzeme Takip Sistemi")
     
-    # Show loading indicator
-    with st.spinner('📊 Veriler yükleniyor...'):
-        # Get summaries (cached)
-        concrete_summary = get_cached_concrete_summary()
-        rebar_summary = get_cached_rebar_summary()
-        mesh_summary = get_cached_mesh_summary()
-        
-        # Get detailed data (cached)
-        concrete_df = get_cached_concrete_logs()
-        rebar_df = get_cached_rebar_logs()
-        mesh_df = get_cached_mesh_logs()
+    # Get summaries (cached - fast after first load)
+    concrete_summary = get_cached_concrete_summary()
+    rebar_summary = get_cached_rebar_summary()
+    mesh_summary = get_cached_mesh_summary()
+    
+    # Get detailed data (cached - fast after first load)
+    concrete_df = get_cached_concrete_logs()
+    rebar_df = get_cached_rebar_logs()
+    mesh_df = get_cached_mesh_logs()
     
     # ============================================
     # MAIN KPIs
@@ -403,8 +401,7 @@ elif page == "📈 Detaylı Analizler":
     tab_beton, tab_demir, tab_hasir = st.tabs(["🧱 Beton", "⚙️ Demir", "🔲 Hasır"])
     
     with tab_beton:
-        with st.spinner('📊 Beton verileri analiz ediliyor...'):
-            concrete_df = get_cached_concrete_logs()
+        concrete_df = get_cached_concrete_logs()
         
         if not concrete_df.empty:
             concrete_df['date'] = pd.to_datetime(concrete_df['date'])
@@ -503,8 +500,7 @@ elif page == "📈 Detaylı Analizler":
             st.info("Henüz beton verisi yok")
 
     with tab_demir:
-        with st.spinner('📊 Demir verileri analiz ediliyor...'):
-            rebar_df = get_cached_rebar_logs()
+        rebar_df = get_cached_rebar_logs()
         
         if not rebar_df.empty:
             rebar_df['date'] = pd.to_datetime(rebar_df['date'])
@@ -566,8 +562,7 @@ elif page == "📈 Detaylı Analizler":
                     st.plotly_chart(fig, use_container_width=True)
     
     with tab_hasir:
-        with st.spinner('📊 Hasır verileri analiz ediliyor...'):
-            mesh_df = get_cached_mesh_logs()
+        mesh_df = get_cached_mesh_logs()
         
         if not mesh_df.empty:
             mesh_df['date'] = pd.to_datetime(mesh_df['date'])
