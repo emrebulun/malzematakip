@@ -1014,6 +1014,9 @@ elif page == "📂 Toplu Excel Yükleme":
 elif page == "📋 Veri Tabloları":
     st.title("📋 Tüm Kayıtlar")
     
+    if not check_password():
+        st.stop()
+    
     tab1, tab2, tab3 = st.tabs(["🧱 Beton", "⚙️ Demir", "🔲 Hasır"])
     
     with tab1:
