@@ -89,17 +89,17 @@ st.sidebar.markdown("---")
 
 # Check connection
 if db.test_connection():
-    st.sidebar.success("✅ Supabase Connected")
+    st.sidebar.success("✅ Veritabanı Bağlı")
 else:
-    st.sidebar.error("❌ Connection Error")
+    st.sidebar.error("❌ Bağlantı Hatası")
 
 page = st.sidebar.radio(
     "Navigasyon",
-    ["📊 Executive Dashboard", "📈 Detaylı Analizler", "🧱 Beton Girişi", "⚙️ Demir Girişi", "🔲 Hasır Girişi", "📋 Veri Tabloları"]
+    ["📊 Ana Sayfa", "📈 Detaylı Analizler", "🧱 Beton Girişi", "⚙️ Demir Girişi", "🔲 Hasır Girişi", "📋 Veri Tabloları"]
 )
 
 st.sidebar.markdown("---")
-st.sidebar.info("💾 Powered by Supabase")
+st.sidebar.info("💾 Veriler Supabase'de saklanıyor")
 
 # ============================================
 # AUTHENTICATION
