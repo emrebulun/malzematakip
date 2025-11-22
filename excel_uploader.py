@@ -108,8 +108,15 @@ class ExcelValidator:
             try:
                 data = {}
                 
-                # Boş satır kontrolü
-                if pd.isna(row[date_col]) and pd.isna(row[class_col]):
+                # BOŞ SATIR KONTROLÜ (Sıkı Filtre)
+                # Tarih veya Miktar yoksa bu satır çöp olabilir.
+                # Satırdaki dolu hücre sayısına bakalım
+                non_empty_count = row.count()
+                if non_empty_count < 3: # En az 3 sütun dolu olmalı (Tarih, Firma, Miktar vb.)
+                    continue
+                    
+                # Kritik alanlar boşsa atla
+                if pd.isna(row[date_col]) or (qty_col and pd.isna(row[qty_col])):
                     continue
 
                 # Tarih
