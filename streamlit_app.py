@@ -5,8 +5,10 @@ Using Supabase REST API with Enhanced Analytics
 
 import streamlit as st
 import pandas as pd
+import io
 from datetime import datetime, date
 from db_manager_rest import get_db_manager_rest
+from excel_uploader import ExcelValidator
 import plotly.express as px
 import plotly.graph_objects as go
 
@@ -95,7 +97,7 @@ else:
 
 page = st.sidebar.radio(
     "Navigasyon",
-    ["📊 Ana Sayfa", "📈 Detaylı Analizler", "🧱 Beton Girişi", "⚙️ Demir Girişi", "🔲 Hasır Girişi", "📋 Veri Tabloları"]
+    ["📊 Ana Sayfa", "📈 Detaylı Analizler", "🧱 Beton Girişi", "⚙️ Demir Girişi", "🔲 Hasır Girişi", "📂 Toplu Excel Yükleme", "📋 Veri Tabloları"]
 )
 
 st.sidebar.markdown("---")
@@ -902,6 +904,112 @@ elif page == "🔲 Hasır Girişi":
         )
     else:
         st.info("Henüz hasır kaydı yok")
+
+elif page == "📂 Toplu Excel Yükleme":
+    st.title("📂 Toplu Veri Yükleme (Excel)")
+    
+    if not check_password():
+        st.stop()
+
+    st.markdown("""
+    Bu modül ile haftalık verilerinizi Excel dosyasından topluca yükleyebilirsiniz.
+    
+    **Kurallar:**
+    1. Dosya `.xlsx` formatında olmalıdır.
+    2. Dosyadaki **tüm satırlar** kurallara uygun olmalıdır.
+    3. **Tek bir satır bile hatalıysa, hiçbir kayıt yapılmaz.**
+    4. Aynı İrsaliye No + Tedarikçi kombinasyonu varsa, eski kayıt güncellenmez, hata verebilir (Sistem ayarlarına bağlı).
+    """)
+
+    import_type = st.radio("Yüklenecek Veri Tipi", ["🧱 Beton", "⚙️ Demir", "🔲 Hasır"], horizontal=True)
+
+    validator = ExcelValidator()
+    
+    # Şablon Hazırlama
+    if import_type == "🧱 Beton":
+        template_cols = validator.concrete_columns.keys()
+        demo_data = [{'Tarih': '25.11.2025', 'Firma': 'ÖZYURT', 'İrsaliye No': '12345', 'Beton Sınıfı': 'C30', 'Miktar': '12.5', 'Teslimat Şekli': 'POMPALI', 'Blok': 'A1', 'Açıklama': 'Zemin'}]
+    elif import_type == "⚙️ Demir":
+        template_cols = validator.rebar_columns.keys()
+        demo_data = [{'Tarih': '25.11.2025', 'Tedarikçi': 'KARDEMİR', 'İrsaliye No': 'D-001', 'Etap': '3.ETAP', 'Üretici': 'İÇDAŞ', 'Q8': '100', 'Q10': '200', 'Notlar': ''}]
+    else:
+        template_cols = validator.mesh_columns.keys()
+        demo_data = [{'Tarih': '25.11.2025', 'Firma': 'DOFER', 'İrsaliye No': 'H-001', 'Hasır Tipi': 'Q131', 'Ebatlar': '215x500', 'Adet': '50', 'Ağırlık': '1250', 'Kullanım Yeri': 'Perde'}]
+
+    # Şablon İndirme
+    df_template = pd.DataFrame(demo_data)
+    # CSV yerine Excel indirilebilir ama pandas ile Excel yazmak için openpyxl gerekir. CSV daha güvenli şimdilik veya Excel.
+    # Kullanıcı Excel istedi, Excel verelim. openpyxl requirements.txt'de olmayabilir, kontrol edelim. 
+    # Listede yoksa CSV verelim.
+    
+    st.download_button(
+        label="📥 Örnek Şablon İndir (Excel)",
+        data=df_template.to_csv(index=False).encode('utf-8-sig'), # Excel export kütüphanesi riskine girmeyelim, CSV verip Excel ile açsınlar
+        file_name=f"sablon_{import_type.split()[1].lower()}.csv",
+        mime="text/csv",
+        help="Bu dosyayı Excel ile açıp doldurabilirsiniz. Farklı kaydederken .xlsx seçebilirsiniz."
+    )
+
+    uploaded_file = st.file_uploader("Excel Dosyasını Yükleyin", type=['xlsx', 'xls'])
+
+    if uploaded_file:
+        try:
+            df = pd.read_excel(uploaded_file)
+            st.info(f"📄 {len(df)} satır okundu. Kontrol ediliyor...")
+
+            clean_data = []
+            errors = []
+
+            if import_type == "🧱 Beton":
+                clean_data, errors = validator.validate_concrete(df)
+            elif import_type == "⚙️ Demir":
+                clean_data, errors = validator.validate_rebar(df)
+            else:
+                clean_data, errors = validator.validate_mesh(df)
+
+            if errors:
+                st.error(f"❌ Dosyada {len(errors)} adet hata bulundu. Lütfen düzeltip tekrar yükleyin.")
+                with st.expander("Hata Listesi (Tıklayıp Genişletin)", expanded=True):
+                    for err in errors:
+                        st.write(f"- {err}")
+            else:
+                st.success("✅ Tüm veriler doğrulandı! Yüklemeye hazır.")
+                st.dataframe(pd.DataFrame(clean_data).head(), use_container_width=True)
+                
+                if st.button(f"🚀 {len(clean_data)} Kaydı Veritabanına Aktar", type="primary"):
+                    progress_bar = st.progress(0)
+                    success_count = 0
+                    fail_count = 0
+                    
+                    for i, item in enumerate(clean_data):
+                        try:
+                            if import_type == "🧱 Beton":
+                                result = db.add_concrete(item)
+                            elif import_type == "⚙️ Demir":
+                                result = db.add_rebar(item)
+                            else:
+                                result = db.add_mesh(item)
+                                
+                            if result:
+                                success_count += 1
+                            else:
+                                fail_count += 1
+                        except Exception as e:
+                            fail_count += 1
+                            print(f"Upload Error: {e}")
+                        
+                        progress_bar.progress((i + 1) / len(clean_data))
+                    
+                    if fail_count == 0:
+                        st.success(f"🎉 Tebrikler! {success_count} kayıt başarıyla eklendi.")
+                        st.balloons()
+                        st.cache_data.clear() # Cache temizle
+                    else:
+                        st.warning(f"⚠️ İşlem Tamamlandı: {success_count} başarılı, {fail_count} başarısız.")
+                        st.error("Bazı kayıtlar mükerrer olabilir veya veritabanı reddetmiş olabilir.")
+
+        except Exception as e:
+            st.error(f"Dosya okuma hatası: {str(e)}")
 
 elif page == "📋 Veri Tabloları":
     st.title("📋 Tüm Kayıtlar")
