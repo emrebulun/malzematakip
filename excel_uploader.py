@@ -187,18 +187,32 @@ class ExcelValidator:
                     # Eğer sadece Notlar varsa veya çok az veri varsa (footer vb) atlayabiliriz.
                     
                     # Dolu hücre sayısı kontrolü (Satırın çoğunluğu boş mu?)
-                    # Toplam sütun sayısına göre oranlayabiliriz veya sabit sayı verebiliriz.
-                    # Genelde en az 3-4 sütun dolu olmalı (Tarih, Firma, Miktar, Sınıf vb.)
-                    non_empty_count = row.count()
+                    # Sadece pd.notna yetmez, string'e çevirip strip edince boş kalıyor mu ona da bakmalı.
+                    
+                    real_values = []
+                    for val in row:
+                        if pd.notna(val):
+                            s_val = str(val).strip()
+                            if s_val and s_val.lower() != 'nan' and s_val.lower() != 'none':
+                                real_values.append(s_val)
+                    
+                    non_empty_count = len(real_values)
                     
                     if non_empty_count <= 2:
                         # Satırda 1-2 veri var ve kritik veriler eksik -> Muhtemelen not veya çöp
                         continue
 
                     has_other_data = False
-                    if supplier_col and pd.notna(row[supplier_col]): has_other_data = True
-                    if waybill_col and pd.notna(row[waybill_col]): has_other_data = True
-                    if class_col and pd.notna(row[class_col]): has_other_data = True
+                    # Helper to check if a specific column has real data
+                    def has_data(col_name):
+                        if not col_name: return False
+                        val = row[col_name]
+                        if pd.isna(val): return False
+                        return bool(str(val).strip())
+
+                    if has_data(supplier_col): has_other_data = True
+                    if has_data(waybill_col): has_other_data = True
+                    if has_data(class_col): has_other_data = True
                     
                     # Eğer kritik eksik var ama başka veri varsa -> HATA
                     # Eğer kritik eksik var ve başka veri yoksa (veya sadece not varsa) -> ATLA
@@ -391,17 +405,35 @@ class ExcelValidator:
                     raw_date = row[date_col]
                     if pd.isna(raw_date) or str(raw_date).strip() == '':
                         # Tarih yok ama diğer veriler var mı?
-                        has_other_data = False
-                        if supplier_col and pd.notna(row[supplier_col]): has_other_data = True
-                        if waybill_col and pd.notna(row[waybill_col]): has_other_data = True
                         
-                        # Çap sütunlarında veri var mı?
-                        # Basit kontrol: Satırda 3'ten fazla dolu hücre varsa ve tarih yoksa hata ver
+                        # Gerçek dolu hücre sayısını bul (boşlukları sayma)
+                        real_values = []
+                        for val in row:
+                            if pd.notna(val):
+                                s_val = str(val).strip()
+                                if s_val and s_val.lower() != 'nan' and s_val.lower() != 'none':
+                                    real_values.append(s_val)
+                        
+                        non_empty_count = len(real_values)
+
                         # Eğer sadece 1-2 hücre doluysa (örn: sadece not veya sadece firma) ve tarih yoksa -> Atla
-                        if row.count() <= 2:
+                        if non_empty_count <= 2:
                             continue
 
-                        if row.count() > 2: has_other_data = True
+                        has_other_data = False
+                        # Helper
+                        def has_data(col_name):
+                            if not col_name: return False
+                            val = row[col_name]
+                            if pd.isna(val): return False
+                            return bool(str(val).strip())
+
+                        if has_data(supplier_col): has_other_data = True
+                        if has_data(waybill_col): has_other_data = True
+                        
+                        # Çap sütunlarında veri var mı?
+                        # Eğer toplam dolu hücre sayısı > 2 ise muhtemelen veri vardır
+                        if non_empty_count > 2: has_other_data = True
                         
                         if has_other_data:
                             raise ValueError("Tarih eksik")
