@@ -43,3 +43,4 @@ if len(missing_agirlik) > 0:
     print(missing_agirlik[['İRSALİYE NO', 'ADET', 'İRSALİYE AĞIRLIĞI']].to_string())
 
 
+

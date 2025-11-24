@@ -1,0 +1,24 @@
+Original DataFrame:
+        Tarih  ... Açıklama
+0  2023-11-24  ...   Note 1
+1  24.11.2023  ...   Note 2
+2        None  ...   Note 3
+3     Invalid  ...   Note 4
+4  2023-11-25  ...   Note 5
+5        None  ...     None
+6  2023-11-26  ...     None
+
+[7 rows x 8 columns]
+--------------------------------------------------
+
+Cleaned Data Count: 3
+Cleaned Data:
+{'date': '2023-11-24', 'supplier': 'FIRMA A', 'waybill_no': '1001', 'concrete_class': 'C30', 'delivery_method': 'POMPALI', 'quantity_m3': 10.5, 'location_block': 'A1', 'notes': 'Note 1'}
+{'date': '2023-11-24', 'supplier': 'FIRMA B', 'waybill_no': '1002', 'concrete_class': 'C25', 'delivery_method': 'MİKSERLİ', 'quantity_m3': 12.5, 'location_block': 'A2', 'notes': 'Note 2'}
+{'date': '2023-11-25', 'supplier': 'FIRMA E', 'waybill_no': '1005', 'concrete_class': 'C30', 'delivery_method': 'POMPALI', 'quantity_m3': 15.5, 'location_block': 'A5', 'notes': 'Note 5'}
+
+Errors Count: 3
+Errors:
+Satır 4: Eksik Veri (Tarih, Miktar)
+Satır 5: Tarih formatı hatalı
+Satır 8: Miktar eksik

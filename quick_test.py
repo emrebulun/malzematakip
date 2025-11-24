@@ -27,3 +27,4 @@ else:
     print(f"✅ Table accessible! Records: {len(response.data)}")
 
 
+

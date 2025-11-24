@@ -12,3 +12,4 @@ WHERE conrelid = 'concrete_logs'::regclass;
 -- After running this, re-run the import script
 
 
+

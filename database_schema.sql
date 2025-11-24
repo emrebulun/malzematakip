@@ -408,3 +408,4 @@ COMMENT ON COLUMN rebar_delivery_items.is_filament IS 'TRUE if filament (filmaş
 COMMENT ON COLUMN concrete_deliveries.total_price IS 'Auto-calculated: quantity_m3 * unit_price';
 
 
+

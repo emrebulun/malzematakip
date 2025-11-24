@@ -172,16 +172,39 @@ class ExcelValidator:
             try:
                 data = {}
                 
-                # BOŞ SATIR KONTROLÜ (Sıkı Filtre)
-                # Tarih veya Miktar yoksa bu satır çöp olabilir.
-                # Satırdaki dolu hücre sayısına bakalım
-                non_empty_count = row.count()
-                if non_empty_count < 3: # En az 3 sütun dolu olmalı (Tarih, Firma, Miktar vb.)
+                # BOŞ SATIR KONTROLÜ
+                # Eğer satır tamamen boşsa atla
+                if row.dropna().empty:
                     continue
+
+                # Kritik alanlar boşsa HATA VER (Kullanıcı görsün)
+                missing_fields = []
+                if pd.isna(row[date_col]): missing_fields.append("Tarih")
+                if qty_col and pd.isna(row[qty_col]): missing_fields.append("Miktar")
+                
+                if missing_fields:
+                    # Eğer satırda anlamlı başka veri varsa (Firma, İrsaliye, Sınıf) bu bir hatadır.
+                    # Eğer sadece Notlar varsa veya çok az veri varsa (footer vb) atlayabiliriz.
                     
-                # Kritik alanlar boşsa atla
-                if pd.isna(row[date_col]) or (qty_col and pd.isna(row[qty_col])):
-                    continue
+                    has_other_data = False
+                    if supplier_col and pd.notna(row[supplier_col]): has_other_data = True
+                    if waybill_col and pd.notna(row[waybill_col]): has_other_data = True
+                    if class_col and pd.notna(row[class_col]): has_other_data = True
+                    
+                    # Eğer kritik eksik var ama başka veri varsa -> HATA
+                    # Eğer kritik eksik var ve başka veri yoksa (veya sadece not varsa) -> ATLA
+                    if has_other_data:
+                        errors.append(f"Satır {row_num}: Eksik Veri ({', '.join(missing_fields)})")
+                        continue
+                    else:
+                        # Belki sadece Tarih var ama Miktar yok?
+                        # Eğer Tarih var Miktar yoksa -> HATA (Çünkü tarih varsa veri girilmeye çalışılmıştır)
+                        if "Tarih" not in missing_fields and "Miktar" in missing_fields:
+                             errors.append(f"Satır {row_num}: Miktar eksik")
+                             continue
+                        
+                        # Tarih yok, Miktar yok, Diğer önemli alanlar yok -> Muhtemelen boş/çöp satır
+                        continue
 
                 # Tarih
                 try:
@@ -350,15 +373,27 @@ class ExcelValidator:
             try:
                 data = {}
                 
-                # Boş satır kontrolü (Tüm ana alanlar boşsa atla)
-                if pd.isna(row[date_col]) and pd.isna(row[supplier_col]):
+                # Boş satır kontrolü
+                if row.dropna().empty:
                     continue
-
+                
                 # Tarih
                 try:
                     raw_date = row[date_col]
                     if pd.isna(raw_date) or str(raw_date).strip() == '':
-                        continue # Tarih yoksa satırı atla
+                        # Tarih yok ama diğer veriler var mı?
+                        has_other_data = False
+                        if supplier_col and pd.notna(row[supplier_col]): has_other_data = True
+                        if waybill_col and pd.notna(row[waybill_col]): has_other_data = True
+                        
+                        # Çap sütunlarında veri var mı?
+                        # Basit kontrol: Satırda 3'ten fazla dolu hücre varsa ve tarih yoksa hata ver
+                        if row.count() > 2: has_other_data = True
+                        
+                        if has_other_data:
+                            raise ValueError("Tarih eksik")
+                        else:
+                            continue # Boş satır varsay
 
                     if isinstance(raw_date, datetime):
                          data['date'] = raw_date.strftime('%Y-%m-%d')

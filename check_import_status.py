@@ -39,3 +39,4 @@ if response.data:
     print(f"  Toplam: {df['weight_kg'].sum():,.0f} kg")
 
 
+

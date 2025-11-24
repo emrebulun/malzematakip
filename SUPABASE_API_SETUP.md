@@ -57,3 +57,4 @@ ANON_KEY: eyJhbGciOiJIUz... (tamamını kopyalayın)
 **ŞİMDİ:** Yukarıdaki bilgileri alıp bana gönderin, REST API ile bağlantıyı kuralım! 🚀
 
 
+

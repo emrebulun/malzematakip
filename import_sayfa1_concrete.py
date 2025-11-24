@@ -136,3 +136,4 @@ if response.data:
         print(f"\nDifference from expected (54,124.80): {abs(supabase_total - 54124.80):,.2f} m³")
 
 
+

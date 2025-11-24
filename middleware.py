@@ -65,3 +65,4 @@ async def custom_exception_handler(request: Request, exc: Exception):
     )
 
 
+

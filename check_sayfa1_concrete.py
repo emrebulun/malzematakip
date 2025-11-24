@@ -44,3 +44,4 @@ else:
     print("\n❌ MİKTAR column not found!")
 
 
+

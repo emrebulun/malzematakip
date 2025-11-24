@@ -43,3 +43,4 @@ Eğer SQL çalışmazsa:
 - CSV manuel import (5 dakika)
 
 
+

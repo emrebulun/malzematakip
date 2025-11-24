@@ -36,3 +36,4 @@ df_hasir = pd.read_excel(hasir_file, header=0, nrows=15)
 print(df_hasir[['TARİH', 'FİRMA', 'İRSALİYE NO', 'ADET', 'AĞIRLIK']])
 
 
+

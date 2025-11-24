@@ -74,3 +74,4 @@ postgresql://postgres.xmlnpyrgxlvyzphzqeug:05344274465.Eb@aws-0-eu-central-1.poo
 (Sizinki farklı bir region'da olabilir: `aws-0-us-east-1` gibi)
 
 
+
