@@ -186,6 +186,15 @@ class ExcelValidator:
                     # Eğer satırda anlamlı başka veri varsa (Firma, İrsaliye, Sınıf) bu bir hatadır.
                     # Eğer sadece Notlar varsa veya çok az veri varsa (footer vb) atlayabiliriz.
                     
+                    # Dolu hücre sayısı kontrolü (Satırın çoğunluğu boş mu?)
+                    # Toplam sütun sayısına göre oranlayabiliriz veya sabit sayı verebiliriz.
+                    # Genelde en az 3-4 sütun dolu olmalı (Tarih, Firma, Miktar, Sınıf vb.)
+                    non_empty_count = row.count()
+                    
+                    if non_empty_count <= 2:
+                        # Satırda 1-2 veri var ve kritik veriler eksik -> Muhtemelen not veya çöp
+                        continue
+
                     has_other_data = False
                     if supplier_col and pd.notna(row[supplier_col]): has_other_data = True
                     if waybill_col and pd.notna(row[waybill_col]): has_other_data = True
@@ -388,6 +397,10 @@ class ExcelValidator:
                         
                         # Çap sütunlarında veri var mı?
                         # Basit kontrol: Satırda 3'ten fazla dolu hücre varsa ve tarih yoksa hata ver
+                        # Eğer sadece 1-2 hücre doluysa (örn: sadece not veya sadece firma) ve tarih yoksa -> Atla
+                        if row.count() <= 2:
+                            continue
+
                         if row.count() > 2: has_other_data = True
                         
                         if has_other_data:
