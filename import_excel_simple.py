@@ -257,3 +257,5 @@ print(f"TOTAL: {beton_count + demir_count + 63}")
 
 
 
+
+

@@ -70,3 +70,5 @@ print("Ağırlık (real) should be: 1,689,860 kg")
 
 
 
+
+

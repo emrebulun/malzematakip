@@ -975,6 +975,15 @@ elif page == "📂 Toplu Excel Yükleme":
             # Belki ileride selectbox eklenir: st.selectbox("Sayfa Seçiniz", sheet_names)
             
             df = pd.read_excel(uploaded_file, sheet_name=target_sheet)
+            
+            # Remove rows with less than 3 non-empty columns (User Request: Ignore rows with <3 columns of data)
+            original_len = len(df)
+            df = df.dropna(thresh=3)
+            filtered_len = len(df)
+            
+            if original_len != filtered_len:
+                st.warning(f"⚠️ {original_len - filtered_len} adet eksik veri içeren satır (3 sütundan az veri) yoksayıldı.")
+
             st.info(f"📄 '{target_sheet}' sayfası okunuyor ({len(df)} satır)...")
 
             clean_data = []

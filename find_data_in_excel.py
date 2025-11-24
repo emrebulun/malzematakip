@@ -37,3 +37,5 @@ print(df_hasir[['TARİH', 'FİRMA', 'İRSALİYE NO', 'ADET', 'AĞIRLIK']])
 
 
 
+
+

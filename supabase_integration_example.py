@@ -326,3 +326,5 @@ st.sidebar.info("🚀 **Powered by Supabase**\nPostgreSQL Cloud Database")
 
 
 
+
+

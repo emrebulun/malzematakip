@@ -409,3 +409,5 @@ COMMENT ON COLUMN concrete_deliveries.total_price IS 'Auto-calculated: quantity_
 
 
 
+
+

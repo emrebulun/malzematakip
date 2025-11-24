@@ -177,6 +177,21 @@ class ExcelValidator:
                 if row.dropna().empty:
                     continue
 
+                # Dolu hücre sayısı kontrolü (Satırın çoğunluğu boş mu?)
+                # Sadece pd.notna yetmez, string'e çevirip strip edince boş kalıyor mu ona da bakmalı.
+                real_values = []
+                for val in row:
+                    if pd.notna(val):
+                        s_val = str(val).strip()
+                        if s_val and s_val.lower() != 'nan' and s_val.lower() != 'none':
+                            real_values.append(s_val)
+                
+                non_empty_count = len(real_values)
+                
+                # Kullanıcı isteği: 4'ten az sütun doluysa satırı yok say
+                if non_empty_count < 4:
+                    continue
+
                 # Kritik alanlar boşsa HATA VER (Kullanıcı görsün)
                 missing_fields = []
                 if pd.isna(row[date_col]): missing_fields.append("Tarih")
@@ -186,22 +201,6 @@ class ExcelValidator:
                     # Eğer satırda anlamlı başka veri varsa (Firma, İrsaliye, Sınıf) bu bir hatadır.
                     # Eğer sadece Notlar varsa veya çok az veri varsa (footer vb) atlayabiliriz.
                     
-                    # Dolu hücre sayısı kontrolü (Satırın çoğunluğu boş mu?)
-                    # Sadece pd.notna yetmez, string'e çevirip strip edince boş kalıyor mu ona da bakmalı.
-                    
-                    real_values = []
-                    for val in row:
-                        if pd.notna(val):
-                            s_val = str(val).strip()
-                            if s_val and s_val.lower() != 'nan' and s_val.lower() != 'none':
-                                real_values.append(s_val)
-                    
-                    non_empty_count = len(real_values)
-                    
-                    if non_empty_count <= 2:
-                        # Satırda 1-2 veri var ve kritik veriler eksik -> Muhtemelen not veya çöp
-                        continue
-
                     has_other_data = False
                     # Helper to check if a specific column has real data
                     def has_data(col_name):
@@ -215,19 +214,12 @@ class ExcelValidator:
                     if has_data(class_col): has_other_data = True
                     
                     # Eğer kritik eksik var ama başka veri varsa -> HATA
-                    # Eğer kritik eksik var ve başka veri yoksa (veya sadece not varsa) -> ATLA
-                    if has_other_data:
-                        errors.append(f"Satır {row_num}: Eksik Veri ({', '.join(missing_fields)})")
-                        continue
-                    else:
-                        # Belki sadece Tarih var ama Miktar yok?
-                        # Eğer Tarih var Miktar yoksa -> HATA (Çünkü tarih varsa veri girilmeye çalışılmıştır)
-                        if "Tarih" not in missing_fields and "Miktar" in missing_fields:
-                             errors.append(f"Satır {row_num}: Miktar eksik")
-                             continue
-                        
-                        # Tarih yok, Miktar yok, Diğer önemli alanlar yok -> Muhtemelen boş/çöp satır
-                        continue
+                    # Zaten yukarıda <4 kontrolü yaptık, yani en az 4 veri var.
+                    # Bu durumda kritik veri eksikse kesinlikle hata vermeliyiz.
+                    errors.append(f"Satır {row_num}: Eksik Veri ({', '.join(missing_fields)})")
+                    continue
+
+
 
                 # Tarih
                 try:
@@ -400,45 +392,29 @@ class ExcelValidator:
                 if row.dropna().empty:
                     continue
                 
+                # Dolu hücre sayısı kontrolü
+                real_values = []
+                for val in row:
+                    if pd.notna(val):
+                        s_val = str(val).strip()
+                        if s_val and s_val.lower() != 'nan' and s_val.lower() != 'none':
+                            real_values.append(s_val)
+                
+                non_empty_count = len(real_values)
+
+                # Kullanıcı isteği: 4'ten az sütun doluysa satırı yok say
+                if non_empty_count < 4:
+                    continue
+
                 # Tarih
                 try:
                     raw_date = row[date_col]
                     if pd.isna(raw_date) or str(raw_date).strip() == '':
-                        # Tarih yok ama diğer veriler var mı?
-                        
-                        # Gerçek dolu hücre sayısını bul (boşlukları sayma)
-                        real_values = []
-                        for val in row:
-                            if pd.notna(val):
-                                s_val = str(val).strip()
-                                if s_val and s_val.lower() != 'nan' and s_val.lower() != 'none':
-                                    real_values.append(s_val)
-                        
-                        non_empty_count = len(real_values)
+                        # Tarih yok ama satırda en az 4 veri var (yukarıdaki kontrol)
+                        # Bu durumda kesinlikle hata vermeliyiz çünkü dolu bir satır ama tarih yok.
+                        raise ValueError("Tarih eksik")
 
-                        # Eğer sadece 1-2 hücre doluysa (örn: sadece not veya sadece firma) ve tarih yoksa -> Atla
-                        if non_empty_count <= 2:
-                            continue
 
-                        has_other_data = False
-                        # Helper
-                        def has_data(col_name):
-                            if not col_name: return False
-                            val = row[col_name]
-                            if pd.isna(val): return False
-                            return bool(str(val).strip())
-
-                        if has_data(supplier_col): has_other_data = True
-                        if has_data(waybill_col): has_other_data = True
-                        
-                        # Çap sütunlarında veri var mı?
-                        # Eğer toplam dolu hücre sayısı > 2 ise muhtemelen veri vardır
-                        if non_empty_count > 2: has_other_data = True
-                        
-                        if has_other_data:
-                            raise ValueError("Tarih eksik")
-                        else:
-                            continue # Boş satır varsay
 
                     if isinstance(raw_date, datetime):
                          data['date'] = raw_date.strftime('%Y-%m-%d')
