@@ -192,32 +192,7 @@ class ExcelValidator:
                 if non_empty_count < 4:
                     continue
 
-                # Kritik alanlar boşsa HATA VER (Kullanıcı görsün)
-                missing_fields = []
-                if pd.isna(row[date_col]): missing_fields.append("Tarih")
-                if qty_col and pd.isna(row[qty_col]): missing_fields.append("Miktar")
-                
-                if missing_fields:
-                    # Eğer satırda anlamlı başka veri varsa (Firma, İrsaliye, Sınıf) bu bir hatadır.
-                    # Eğer sadece Notlar varsa veya çok az veri varsa (footer vb) atlayabiliriz.
-                    
-                    has_other_data = False
-                    # Helper to check if a specific column has real data
-                    def has_data(col_name):
-                        if not col_name: return False
-                        val = row[col_name]
-                        if pd.isna(val): return False
-                        return bool(str(val).strip())
 
-                    if has_data(supplier_col): has_other_data = True
-                    if has_data(waybill_col): has_other_data = True
-                    if has_data(class_col): has_other_data = True
-                    
-                    # Eğer kritik eksik var ama başka veri varsa -> HATA
-                    # Zaten yukarıda <4 kontrolü yaptık, yani en az 4 veri var.
-                    # Bu durumda kritik veri eksikse kesinlikle hata vermeliyiz.
-                    errors.append(f"Satır {row_num}: Eksik Veri ({', '.join(missing_fields)})")
-                    continue
 
 
                 # --- AKILLI VERİ OKUMA (Smart Scan) ---
