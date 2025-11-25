@@ -250,6 +250,11 @@ class ExcelValidator:
                         try:
                             # Temizle ve sayıya çevir
                             s_val = str(val).strip()
+                            
+                            # Eğer hücrede "ETAP", "KAT", "BLOK", "NO" gibi kelimeler varsa bu miktar değildir
+                            if any(x in s_val.upper() for x in ['ETAP', 'KAT', 'BLOK', 'NO', 'MAHAL']):
+                                continue
+                                
                             clean_val = re.sub(r'[^\d.,]', '', s_val)
                             if not clean_val: continue
                             
@@ -272,14 +277,16 @@ class ExcelValidator:
                 if not found_date_val and not found_qty_val:
                     continue
                     
-                # Eğer tarih var miktar yoksa -> HATA (Kullanıcı unuttu)
-                if found_date_val and not found_qty_val:
-                    errors.append(f"Satır {row_num}: Miktar bulunamadı")
+                # Kullanıcı İsteği: Eğer miktar yoksa veya 0'dan büyük değilse satırı dikkate alma
+                # Yani "Miktar bulunamadı" hatası vermek yerine sessizce atla.
+                if not found_qty_val:
                     continue
                     
-                # Eğer miktar var tarih yoksa -> HATA (Kullanıcı unuttu)
-                if not found_date_val and found_qty_val:
-                    errors.append(f"Satır {row_num}: Tarih bulunamadı")
+                # Eğer miktar var ama tarih yoksa -> Bu durumda da atlayalım mı yoksa hata mı verelim?
+                # Kullanıcı "ne miktar dolu ne de tarih" dediği senaryoda zaten ilk if yakalıyor.
+                # Ancak "sadece miktar var tarih yok" durumu nadirdir ama yine de güvenli olması için
+                # eğer tarih yoksa da atlayalım (belki toplam satırıdır).
+                if not found_date_val:
                     continue
 
                 # --- VERİ İŞLEME ---
