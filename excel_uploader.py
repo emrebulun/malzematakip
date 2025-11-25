@@ -220,24 +220,85 @@ class ExcelValidator:
                     continue
 
 
+                # --- AKILLI VERİ OKUMA (Smart Scan) ---
+                # Satır kaymalarına karşı tüm satırı tarayarak Tarih ve Miktar bulmaya çalışacağız.
+                
+                found_date_val = None
+                found_qty_val = None
+                
+                # 1. Önce belirlenen sütunlara bak
+                if pd.notna(row[date_col]): found_date_val = row[date_col]
+                if qty_col and pd.notna(row[qty_col]): found_qty_val = row[qty_col]
+                
+                # 2. Eğer tarih yoksa satırı tara
+                if not found_date_val:
+                    for val in row:
+                        if pd.isna(val): continue
+                        s_val = str(val).strip()
+                        # Basit tarih regex kontrolü
+                        if re.search(r'(\d{2}[./-]\d{2}[./-]\d{4})|(\d{4}-\d{2}-\d{2})', s_val):
+                            found_date_val = val
+                            break
+                            
+                # 3. Eğer miktar yoksa satırı tara (Sayısal değer ara)
+                if not found_qty_val:
+                    for col_name, val in row.items():
+                        # Tarih veya metin sütunlarını atla
+                        if col_name == date_col or col_name == supplier_col or col_name == class_col: continue
+                        if pd.isna(val): continue
+                        
+                        try:
+                            # Temizle ve sayıya çevir
+                            s_val = str(val).strip()
+                            clean_val = re.sub(r'[^\d.,]', '', s_val)
+                            if not clean_val: continue
+                            
+                            if ',' in clean_val and '.' in clean_val:
+                                f_val = float(clean_val.replace('.', '').replace(',', '.'))
+                            elif ',' in clean_val:
+                                f_val = float(clean_val.replace(',', '.'))
+                            else:
+                                f_val = float(clean_val)
+                                
+                            # Mantıklı bir beton miktarı mı? (0.5 - 150 m3)
+                            if 0.5 <= f_val <= 150:
+                                found_qty_val = f_val
+                                break
+                        except:
+                            continue
 
-                # Tarih
-                try:
-                    raw_date = row[date_col]
-                    if pd.isna(raw_date): continue
+                # 4. KARAR MEKANİZMASI
+                # Eğer ne tarih ne de miktar bulunduysa -> BU BİR ÇÖP/EKSTRA SATIRDIR -> ATLA
+                if not found_date_val and not found_qty_val:
+                    continue
                     
-                    if isinstance(raw_date, datetime):
-                         data['date'] = raw_date.strftime('%Y-%m-%d')
+                # Eğer tarih var miktar yoksa -> HATA (Kullanıcı unuttu)
+                if found_date_val and not found_qty_val:
+                    errors.append(f"Satır {row_num}: Miktar bulunamadı")
+                    continue
+                    
+                # Eğer miktar var tarih yoksa -> HATA (Kullanıcı unuttu)
+                if not found_date_val and found_qty_val:
+                    errors.append(f"Satır {row_num}: Tarih bulunamadı")
+                    continue
+
+                # --- VERİ İŞLEME ---
+                
+                # Tarih Formatlama
+                try:
+                    if isinstance(found_date_val, datetime):
+                         data['date'] = found_date_val.strftime('%Y-%m-%d')
                     else:
                         found_date = False
+                        raw_date_str = str(found_date_val).strip()
                         for fmt in ['%d.%m.%Y', '%Y-%m-%d', '%d/%m/%Y', '%Y.%m.%d']:
                             try:
-                                data['date'] = pd.to_datetime(raw_date, dayfirst=True).strftime('%Y-%m-%d')
+                                data['date'] = pd.to_datetime(raw_date_str, dayfirst=True).strftime('%Y-%m-%d')
                                 found_date = True
                                 break
                             except:
                                 continue
-                        if not found_date: raise ValueError
+                        if not found_date: raise ValueError("Tarih formatı geçersiz")
                 except:
                     raise ValueError("Tarih formatı hatalı")
 
@@ -276,24 +337,21 @@ class ExcelValidator:
                 else:
                     data['delivery_method'] = "MİKSERLİ"
 
-                # Miktar
-                if qty_col:
-                    try:
-                        raw_qty = str(row[qty_col])
+                # Miktar İşleme
+                try:
+                    if isinstance(found_qty_val, (int, float)):
+                        data['quantity_m3'] = float(found_qty_val)
+                    else:
+                        # String ise temizle
+                        raw_qty = str(found_qty_val)
                         clean_qty = re.sub(r'[^\d.,]', '', raw_qty)
                         if ',' in clean_qty and '.' in clean_qty:
                             clean_qty = clean_qty.replace('.', '').replace(',', '.')
                         elif ',' in clean_qty:
                              clean_qty = clean_qty.replace(',', '.')
-                        
                         data['quantity_m3'] = float(clean_qty)
-                    except:
-                        raise ValueError("Miktar okunamadı")
-                else:
-                    # Miktar sütunu yoksa, belki 'MİKSERLİ' sütununun yanında bir sütun vardır?
-                    # Bu dosya formatında miktar sütunu yok gibi görünüyor veya adı 'Unnamed'.
-                    # Geçici olarak 0 veya tahmin? Hata vermek en iyisi.
-                    raise ValueError("Miktar sütunu bulunamadı")
+                except:
+                    raise ValueError("Miktar okunamadı")
 
                 if data['quantity_m3'] <= 0: raise ValueError("Miktar 0 olamaz")
 
@@ -406,31 +464,44 @@ class ExcelValidator:
                 if non_empty_count < 4:
                     continue
 
-                # Tarih
+                # --- AKILLI TARİH OKUMA (Smart Scan) ---
+                found_date_val = None
+                
+                # 1. Önce belirlenen sütuna bak
+                if pd.notna(row[date_col]): 
+                    found_date_val = row[date_col]
+                
+                # 2. Eğer tarih yoksa satırı tara
+                if not found_date_val:
+                    for val in row:
+                        if pd.isna(val): continue
+                        s_val = str(val).strip()
+                        # Basit tarih regex kontrolü
+                        if re.search(r'(\d{2}[./-]\d{2}[./-]\d{4})|(\d{4}-\d{2}-\d{2})', s_val):
+                            found_date_val = val
+                            break
+                
+                if not found_date_val:
+                    # Tarih bulunamadı ama satırda veri var (yukarıdaki <4 kontrolünü geçti)
+                    raise ValueError("Tarih bulunamadı")
+
+                # Tarih Formatlama
                 try:
-                    raw_date = row[date_col]
-                    if pd.isna(raw_date) or str(raw_date).strip() == '':
-                        # Tarih yok ama satırda en az 4 veri var (yukarıdaki kontrol)
-                        # Bu durumda kesinlikle hata vermeliyiz çünkü dolu bir satır ama tarih yok.
-                        raise ValueError("Tarih eksik")
-
-
-
-                    if isinstance(raw_date, datetime):
-                         data['date'] = raw_date.strftime('%Y-%m-%d')
+                    if isinstance(found_date_val, datetime):
+                         data['date'] = found_date_val.strftime('%Y-%m-%d')
                     else:
-                        # Farklı formatları dene
                         found_date = False
+                        raw_date_str = str(found_date_val).strip()
                         for fmt in ['%d.%m.%Y', '%Y-%m-%d', '%d/%m/%Y', '%Y.%m.%d']:
                             try:
-                                data['date'] = pd.to_datetime(raw_date, dayfirst=True).strftime('%Y-%m-%d')
+                                data['date'] = pd.to_datetime(raw_date_str, dayfirst=True).strftime('%Y-%m-%d')
                                 found_date = True
                                 break
                             except:
                                 continue
-                        if not found_date: raise ValueError
+                        if not found_date: raise ValueError("Tarih formatı geçersiz")
                 except:
-                    raise ValueError(f"Tarih formatı hatalı: {row[date_col]}")
+                    raise ValueError(f"Tarih formatı hatalı: {found_date_val}")
 
                 # Firma & İrsaliye
                 if supplier_col:
