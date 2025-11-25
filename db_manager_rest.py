@@ -9,7 +9,7 @@ from typing import Dict, List, Optional
 import pandas as pd
 from datetime import datetime, date
 
-class SupabaseManagerREST:
+class SupabaseManagerREST_v2:
     """
     Database manager using Supabase REST API
     More reliable than direct PostgreSQL connection
@@ -561,8 +561,8 @@ class SupabaseManagerREST:
 # ============================================
 
 @st.cache_resource
-def get_db_manager_rest() -> SupabaseManagerREST:
+def get_db_manager_rest() -> SupabaseManagerREST_v2:
     """Get or create cached database manager instance (REST API)"""
-    return SupabaseManagerREST()
+    return SupabaseManagerREST_v2()
 
 
