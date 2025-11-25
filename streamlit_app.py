@@ -40,7 +40,7 @@ st.markdown("""
 
 # Initialize database manager
 @st.cache_resource
-def init_db():
+def init_db_v2():
     return get_db_manager_rest()
 
 # Cache data functions for performance
@@ -76,7 +76,7 @@ def get_cached_concrete_by_supplier():
 def get_cached_concrete_by_location():
     return db.get_concrete_by_location()
 
-db = init_db()
+db = init_db_v2()
 
 # Sidebar
 st.sidebar.title("🏗️ Şantiye 997")
