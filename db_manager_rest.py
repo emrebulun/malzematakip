@@ -240,6 +240,18 @@ class SupabaseManagerREST:
         except Exception as e:
             st.error(f"❌ Failed to group by location: {e}")
             return pd.DataFrame()
+
+    def delete_all_concrete_logs(self) -> bool:
+        """Delete ALL concrete logs (Use with caution!)"""
+        try:
+            # Supabase doesn't support truncate via REST easily without RLS policies allowing it.
+            # We will delete where id > 0 (assuming id is int) or some other condition.
+            # Or better, delete all records.
+            response = self.client.table('concrete_logs').delete().neq('id', 0).execute()
+            return True
+        except Exception as e:
+            st.error(f"❌ Failed to delete concrete logs: {e}")
+            return False
     
     # ============================================
     # REBAR OPERATIONS

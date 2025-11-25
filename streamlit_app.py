@@ -922,6 +922,18 @@ elif page == "📂 Toplu Excel Yükleme":
     """)
 
     import_type = st.radio("Yüklenecek Veri Tipi", ["🧱 Beton", "⚙️ Demir", "🔲 Hasır"], horizontal=True)
+    
+    # Veri Temizleme Bölümü
+    with st.expander("⚠️ Veri Temizleme (Dikkat)", expanded=False):
+        st.warning("Bu işlem seçili veri tipindeki TÜM kayıtları silecektir. Bu işlem geri alınamaz!")
+        if st.button("🗑️ Mevcut Verileri Sil", type="secondary"):
+            if import_type == "🧱 Beton":
+                if db.delete_all_concrete_logs():
+                    st.success("Tüm beton kayıtları silindi!")
+                    st.cache_data.clear()
+                    st.rerun()
+            else:
+                st.info("Bu özellik şu an sadece Beton için aktiftir.")
 
     validator = ExcelValidator()
     
