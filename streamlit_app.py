@@ -84,7 +84,8 @@ st.sidebar.title("🏗️ Şantiye 997")
 # Add refresh button to sidebar
 if st.sidebar.button("🔄 Verileri Yenile", help="Önbelleği temizle ve verileri yenile"):
     st.cache_data.clear()
-    st.sidebar.success("Önbellek temizlendi!")
+    st.cache_resource.clear()
+    st.sidebar.success("Tüm önbellek temizlendi!")
     st.rerun()
 
 st.sidebar.markdown("---")
