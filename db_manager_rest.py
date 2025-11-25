@@ -147,7 +147,8 @@ class SupabaseManagerREST:
             page = 0
             
             while True:
-                response = self.client.table('concrete_logs').select("*").range(page * page_size, (page + 1) * page_size - 1).execute()
+                # Select only necessary columns to reduce payload
+                response = self.client.table('concrete_logs').select("quantity_m3, supplier, location_block").range(page * page_size, (page + 1) * page_size - 1).execute()
                 
                 if response.data:
                     all_data.extend(response.data)
@@ -264,6 +265,44 @@ class SupabaseManagerREST:
         except Exception as e:
             st.error(f"❌ Failed to add rebar: {e}")
             return False
+
+    def bulk_insert_rebar(self, data_list: List[Dict], batch_size: int = 500) -> Dict:
+        """Bulk insert rebar records in batches"""
+        try:
+            total_inserted = 0
+            failed = 0
+            
+            # Process in batches
+            for i in range(0, len(data_list), batch_size):
+                batch = data_list[i:i + batch_size]
+                
+                # Prepare batch data
+                for item in batch:
+                    if isinstance(item.get('date'), (date, pd.Timestamp)):
+                        item['date'] = item['date'].isoformat() if hasattr(item['date'], 'isoformat') else str(item['date'])
+                    
+                    # Set defaults
+                    for diameter in [8, 10, 12, 14, 16, 18, 20, 22, 25, 28, 32]:
+                        item.setdefault(f'q{diameter}_kg', 0.0)
+                
+                try:
+                    response = self.client.table('rebar_logs').insert(batch).execute()
+                    if response.data:
+                        total_inserted += len(response.data)
+                except Exception as batch_error:
+                    st.warning(f"⚠️ Batch {i//batch_size + 1} failed: {batch_error}")
+                    failed += len(batch)
+            
+            return {
+                'success': True,
+                'total_inserted': total_inserted,
+                'failed': failed,
+                'total_records': len(data_list)
+            }
+            
+        except Exception as e:
+            st.error(f"❌ Bulk insert failed: {e}")
+            return {'success': False, 'error': str(e)}
     
     def get_rebar_logs(self,
                        start_date: Optional[str] = None,
@@ -362,6 +401,40 @@ class SupabaseManagerREST:
         except Exception as e:
             st.error(f"❌ Failed to add mesh: {e}")
             return False
+
+    def bulk_insert_mesh(self, data_list: List[Dict], batch_size: int = 500) -> Dict:
+        """Bulk insert mesh records in batches"""
+        try:
+            total_inserted = 0
+            failed = 0
+            
+            # Process in batches
+            for i in range(0, len(data_list), batch_size):
+                batch = data_list[i:i + batch_size]
+                
+                # Prepare batch data
+                for item in batch:
+                    if isinstance(item.get('date'), (date, pd.Timestamp)):
+                        item['date'] = item['date'].isoformat() if hasattr(item['date'], 'isoformat') else str(item['date'])
+                
+                try:
+                    response = self.client.table('mesh_logs').insert(batch).execute()
+                    if response.data:
+                        total_inserted += len(response.data)
+                except Exception as batch_error:
+                    st.warning(f"⚠️ Batch {i//batch_size + 1} failed: {batch_error}")
+                    failed += len(batch)
+            
+            return {
+                'success': True,
+                'total_inserted': total_inserted,
+                'failed': failed,
+                'total_records': len(data_list)
+            }
+            
+        except Exception as e:
+            st.error(f"❌ Bulk insert failed: {e}")
+            return {'success': False, 'error': str(e)}
     
     def get_mesh_logs(self,
                       start_date: Optional[str] = None,

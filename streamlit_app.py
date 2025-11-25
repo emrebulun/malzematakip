@@ -1009,47 +1009,46 @@ elif page == "📂 Toplu Excel Yükleme":
                     # Modern status container kullanımı
                     status = st.status("Veriler aktarılıyor...", expanded=True)
                     
-                    progress_bar = status.progress(0, text="İşlem başlatılıyor...")
-                    success_count = 0
-                    fail_count = 0
-                    
-                    for i, item in enumerate(clean_data):
-                        try:
-                            if import_type == "🧱 Beton":
-                                result = db.add_concrete(item)
-                            elif import_type == "⚙️ Demir":
-                                result = db.add_rebar(item)
-                            else:
-                                result = db.add_mesh(item)
-                                
-                            if result:
-                                success_count += 1
-                            else:
-                                fail_count += 1
-                        except Exception as e:
-                            fail_count += 1
-                            print(f"Upload Error: {e}")
+                    try:
+                        result = {'success': False, 'total_inserted': 0, 'failed': 0}
                         
-                        # İlerlemeyi güncelle
-                        progress = (i + 1) / len(clean_data)
-                        progress_bar.progress(progress, text=f"İşleniyor: {i+1}/{len(clean_data)}")
-                    
-                    # İşlem bitti
-                    status.update(label="İşlem Tamamlandı!", state="complete", expanded=False)
-                    
-                    # Sonuç mesajları ve önbellek temizliği
-                    st.cache_data.clear()
-                    
-                    if fail_count == 0:
-                        st.success(f"🎉 Harika! {success_count} kayıt başarıyla eklendi.")
-                        st.balloons()
-                        if st.button("Ana Sayfaya Dön ve Yenile"):
-                             st.rerun()
-                    else:
-                        st.warning(f"⚠️ İşlem Tamamlandı: {success_count} başarılı, {fail_count} başarısız.")
-                        st.error("Bazı kayıtlar (Mükerrer İrsaliye vb. nedenlerle) eklenemedi.")
-                        if st.button("Sayfayı Yenile"):
-                             st.rerun()
+                        if import_type == "🧱 Beton":
+                            status.write("Beton verileri toplu yükleniyor...")
+                            result = db.bulk_insert_concrete(clean_data)
+                        elif import_type == "⚙️ Demir":
+                            status.write("Demir verileri toplu yükleniyor...")
+                            result = db.bulk_insert_rebar(clean_data)
+                        else:
+                            status.write("Hasır verileri toplu yükleniyor...")
+                            result = db.bulk_insert_mesh(clean_data)
+                            
+                        if result.get('success'):
+                            success_count = result.get('total_inserted', 0)
+                            fail_count = result.get('failed', 0)
+                            
+                            # İşlem bitti
+                            status.update(label="İşlem Tamamlandı!", state="complete", expanded=False)
+                            
+                            # Sonuç mesajları ve önbellek temizliği
+                            st.cache_data.clear()
+                            
+                            if fail_count == 0:
+                                st.success(f"🎉 Harika! {success_count} kayıt başarıyla eklendi.")
+                                st.balloons()
+                                if st.button("Ana Sayfaya Dön ve Yenile"):
+                                     st.rerun()
+                            else:
+                                st.warning(f"⚠️ İşlem Tamamlandı: {success_count} başarılı, {fail_count} başarısız.")
+                                st.error("Bazı kayıtlar eklenemedi.")
+                                if st.button("Sayfayı Yenile"):
+                                     st.rerun()
+                        else:
+                            status.update(label="Hata Oluştu!", state="error", expanded=False)
+                            st.error(f"Toplu yükleme hatası: {result.get('error')}")
+                            
+                    except Exception as e:
+                        status.update(label="Kritik Hata!", state="error", expanded=False)
+                        st.error(f"Beklenmeyen hata: {str(e)}")
 
         except Exception as e:
             st.error(f"Dosya okuma hatası: {str(e)}")
