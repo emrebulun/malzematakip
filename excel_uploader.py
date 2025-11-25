@@ -203,7 +203,14 @@ class ExcelValidator:
                 
                 # 1. Önce belirlenen sütunlara bak
                 if pd.notna(row[date_col]): found_date_val = row[date_col]
-                if qty_col and pd.notna(row[qty_col]): found_qty_val = row[qty_col]
+                
+                if qty_col and pd.notna(row[qty_col]):
+                    # Miktar sütunundaki değerin gerçekten sayısal olup olmadığını kontrol et
+                    # Eğer "Pompalı" veya boşluk varsa bunu miktar olarak kabul etme, taramaya bırak
+                    raw_v = str(row[qty_col]).strip()
+                    # En az bir rakam içermeli
+                    if any(c.isdigit() for c in raw_v):
+                         found_qty_val = row[qty_col]
                 
                 # 2. Eğer tarih yoksa satırı tara
                 if not found_date_val:
