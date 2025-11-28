@@ -326,10 +326,14 @@ class ExcelValidator:
                     if wb:
                         data['waybill_no'] = wb
                     else:
-                        unique_str = f"{data['date']}_{data['supplier']}_{total_weight:.2f}_{data['project_stage'] or ''}"
+                        # Create a string representation of all weights and notes for uniqueness
+                        weights_str = "_".join([f"q{d}:{data.get(f'q{d}_kg', 0)}" for d in [8, 10, 12, 14, 16, 18, 20, 22, 25, 28, 32] if data.get(f'q{d}_kg', 0) > 0])
+                        unique_str = f"{data['date']}_{data['supplier']}_{weights_str}_{data['project_stage'] or ''}_{data['notes'] or ''}"
                         data['waybill_no'] = f"AUTO-{hashlib.md5(unique_str.encode()).hexdigest()[:8]}"
                 else:
-                    unique_str = f"{data['date']}_{data['supplier']}_{total_weight:.2f}_{data['project_stage'] or ''}"
+                    # Create a string representation of all weights and notes for uniqueness
+                    weights_str = "_".join([f"q{d}:{data.get(f'q{d}_kg', 0)}" for d in [8, 10, 12, 14, 16, 18, 20, 22, 25, 28, 32] if data.get(f'q{d}_kg', 0) > 0])
+                    unique_str = f"{data['date']}_{data['supplier']}_{weights_str}_{data['project_stage'] or ''}_{data['notes'] or ''}"
                     data['waybill_no'] = f"AUTO-{hashlib.md5(unique_str.encode()).hexdigest()[:8]}"
 
                 cleaned_data.append(data)
