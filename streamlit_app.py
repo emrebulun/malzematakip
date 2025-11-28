@@ -7,7 +7,7 @@ import streamlit as st
 import pandas as pd
 import io
 from datetime import datetime, date
-from db_manager_rest import get_db_manager_rest_v6
+from db_manager_rest import get_db_manager_rest_v7
 from excel_uploader import ExcelValidator
 import plotly.express as px
 import plotly.graph_objects as go
@@ -42,7 +42,7 @@ st.markdown("""
 
 @st.cache_resource
 def init_db_v4():
-    return get_db_manager_rest_v6()
+    return get_db_manager_rest_v7()
 
 # Cache data functions for performance
 @st.cache_data(ttl=600)  # Cache for 10 minutes
