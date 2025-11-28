@@ -153,6 +153,10 @@ class ExcelValidator:
         if not col_map['date']:
             return [], ["'Tarih' sütunu bulunamadı."]
         if not col_map['quantity_m3']:
+            # Check if it looks like a Rebar file
+            is_rebar = any(re.search(r'ÇAP|DEM[İI]R|Q\d+', col, re.IGNORECASE) for col in df.columns)
+            if is_rebar:
+                return [], ["'Miktar' (m3) sütunu bulunamadı. Demir dosyası yüklemeye çalışıyor olabilirsiniz. Lütfen yukarıdan '⚙️ Demir' seçeneğini seçtiğinizden emin olun."]
             return [], ["'Miktar' (m3) sütunu bulunamadı."]
 
         valid_classes = ['C16', 'C20', 'C25', 'C30', 'C35', 'C40', 'GRO', 'ŞAP', 'KUM', 'TAS', 'TAŞ']
