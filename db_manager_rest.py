@@ -423,9 +423,9 @@ class SupabaseManagerREST_v2:
 # ============================================
 
 @st.cache_resource
-def get_db_manager_rest_v3() -> SupabaseManagerREST_v2:
-    """Get or create cached database manager instance (REST API) - V3 (Updated)"""
-    print("Initializing SupabaseManagerREST_v2 (V3 Updated)...")
+def get_db_manager_rest_v5() -> SupabaseManagerREST_v2:
+    """Get or create cached database manager instance (REST API) - V5"""
+    print("Initializing SupabaseManagerREST_v2 (V5)...")
     return SupabaseManagerREST_v2()
 
 
