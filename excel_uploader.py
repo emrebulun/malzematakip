@@ -336,6 +336,7 @@ class ExcelValidator:
                     unique_str = f"{data['date']}_{data['supplier']}_{weights_str}_{data['project_stage'] or ''}_{data['notes'] or ''}_{index}"
                     data['waybill_no'] = f"AUTO-{hashlib.md5(unique_str.encode()).hexdigest()[:8]}"
 
+                data['row_num'] = row_num
                 cleaned_data.append(data)
             except Exception as e:
                 errors.append(f"Satır {row_num}: {str(e)}")

@@ -1110,7 +1110,16 @@ elif page == "📂 Toplu Excel Yükleme":
                             if fail_count == 0:
                                 msg = f"🎉 İşlem Başarılı! {success_count} yeni kayıt eklendi."
                                 if skipped_count > 0:
-                                    msg += f" ({skipped_count} adet mükerrer kayıt atlandı)"
+                                    skipped_rows = result.get('skipped_rows', [])
+                                    if skipped_rows:
+                                        # Sort and format row numbers
+                                        skipped_rows.sort()
+                                        rows_str = ", ".join(map(str, skipped_rows[:20])) # Show first 20
+                                        if len(skipped_rows) > 20:
+                                            rows_str += "..."
+                                        msg += f" ({skipped_count} adet mükerrer kayıt atlandı. Satırlar: {rows_str})"
+                                    else:
+                                        msg += f" ({skipped_count} adet mükerrer kayıt atlandı)"
                                 st.success(msg)
                                 
                                 if success_count > 0:

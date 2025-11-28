@@ -369,6 +369,7 @@ class SupabaseManagerREST_v2:
 
             new_data = []
             skipped = 0
+            skipped_rows = []
             
             for item in data_list:
                 i_date = item['date']
@@ -381,12 +382,19 @@ class SupabaseManagerREST_v2:
                 
                 if key in existing_keys:
                     skipped += 1
+                    if 'row_num' in item:
+                        skipped_rows.append(item['row_num'])
                 else:
-                    new_data.append(item)
+                    # Remove row_num before insertion as it's not in DB
+                    item_to_insert = item.copy()
+                    if 'row_num' in item_to_insert:
+                        del item_to_insert['row_num']
+                    
+                    new_data.append(item_to_insert)
                     existing_keys.add(key)
 
             if not new_data:
-                return {'success': True, 'total_inserted': 0, 'failed': 0, 'skipped': skipped, 'total_records': len(data_list), 'message': "All duplicates."}
+                return {'success': True, 'total_inserted': 0, 'failed': 0, 'skipped': skipped, 'skipped_rows': skipped_rows, 'total_records': len(data_list), 'message': "All duplicates."}
 
             total_inserted = 0
             failed = 0
@@ -401,7 +409,7 @@ class SupabaseManagerREST_v2:
                     st.warning(f"⚠️ Batch {i//batch_size + 1} failed: {batch_error}")
                     failed += len(batch)
             
-            return {'success': True, 'total_inserted': total_inserted, 'failed': failed, 'skipped': skipped, 'total_records': len(data_list)}
+            return {'success': True, 'total_inserted': total_inserted, 'failed': failed, 'skipped': skipped, 'skipped_rows': skipped_rows, 'total_records': len(data_list)}
             
         except Exception as e:
             st.error(f"❌ Bulk insert rebar failed: {e}")
