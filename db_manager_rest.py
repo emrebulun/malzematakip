@@ -322,85 +322,133 @@ class SupabaseManagerREST_v2:
             st.error(f"❌ Failed to add rebar: {e}")
             return False
 
-    def bulk_insert_rebar(self, data_list: List[Dict], batch_size: int = 500) -> Dict:
-        """Bulk insert rebar records in batches with duplicate check"""
+    def check_rebar_duplicates(self, data_list: List[Dict]) -> Tuple[List[Dict], List[Dict]]:
+        """Check for duplicates in the database based on content."""
+        try:
+            if not data_list:
+                return [], []
+
+            dates = [item['date'] for item in data_list]
+            min_date = min(dates)
+            max_date = max(dates)
+
+            # Fetch existing logs for the date range
+            existing_logs = self.get_rebar_logs(start_date=min_date, end_date=max_date)
+            
+            existing_signatures = set()
+            if not existing_logs.empty:
+                for _, row in existing_logs.iterrows():
+                    d_val = row['date']
+                    d_str = d_val.strftime('%Y-%m-%d') if isinstance(d_val, pd.Timestamp) else str(d_val).split('T')[0]
+                    supp = str(row['supplier']).strip().upper()
+                    
+                    # Create a content signature
+                    # For rebar, we check date, supplier, and total weight as a primary filter
+                    # If strictly matching weights is needed, we could add that, but total_weight is a good proxy for "suspicion"
+                    total_w = float(row.get('total_weight_kg', 0))
+                    
+                    # We can also include waybill_no if it's not AUTO
+                    wayb = str(row.get('waybill_no') or '').strip().upper()
+                    if wayb.startswith('AUTO-'):
+                        sig = (d_str, supp, f"{total_w:.2f}")
+                    else:
+                        sig = (d_str, supp, wayb)
+                    
+                    existing_signatures.add(sig)
+
+            new_records = []
+            potential_duplicates = []
+
+            for item in data_list:
+                i_date = item['date']
+                if 'T' in i_date: i_date = i_date.split('T')[0]
+                i_supp = str(item['supplier']).strip().upper()
+                i_total_w = float(item.get('total_weight_kg', 0))
+                i_wayb = str(item.get('waybill_no') or '').strip().upper()
+
+                if i_wayb.startswith('AUTO-'):
+                    sig = (i_date, i_supp, f"{i_total_w:.2f}")
+                else:
+                    sig = (i_date, i_supp, i_wayb)
+
+                if sig in existing_signatures:
+                    potential_duplicates.append(item)
+                else:
+                    new_records.append(item)
+
+            return new_records, potential_duplicates
+
+        except Exception as e:
+            st.error(f"❌ Duplicate check failed: {e}")
+            return data_list, []
+
+    def bulk_insert_rebar(self, data_list: List[Dict], batch_size: int = 500, skip_existing: bool = True) -> Dict:
+        """Bulk insert rebar records in batches"""
         try:
             if not data_list:
                 return {'success': True, 'total_inserted': 0, 'failed': 0, 'skipped': 0, 'total_records': 0}
 
-            dates = []
-            for item in data_list:
-                if isinstance(item.get('date'), (date, pd.Timestamp)):
-                    item['date'] = item['date'].isoformat() if hasattr(item['date'], 'isoformat') else str(item['date'])
-                dates.append(item['date'])
-            
-            if not dates:
-                return {'success': False, 'error': "No dates found in data"}
-
-            min_date = min(dates)
-            max_date = max(dates)
-
-            existing_logs = self.get_rebar_logs(start_date=min_date, end_date=max_date)
-            
-            existing_keys = set()
-            if not existing_logs.empty:
-                for _, row in existing_logs.iterrows():
-                    d_val = row['date']
-                    if isinstance(d_val, pd.Timestamp):
-                        d_str = d_val.strftime('%Y-%m-%d')
-                    else:
-                        d_str = str(d_val).split('T')[0]
-                    
-                    supp = str(row['supplier']).strip().upper()
-                    # Rebar might use 'irsaliye_no' or 'waybill_no' depending on schema, assuming 'waybill_no' based on previous context or 'irsaliye_no'
-                    # Checking previous context, rebar_columns mapped 'İrsaliye No' to 'waybill_no'.
-                    # But wait, in add_rebar form in streamlit_app.py it uses 'irsaliye_no'. 
-                    # Let's check the schema or usage. In excel_uploader it maps to 'waybill_no'.
-                    # In streamlit_app.py add_rebar uses 'irsaliye_no'. This is inconsistent.
-                    # However, for bulk insert we are using data from excel_uploader which uses 'waybill_no'.
-                    # Let's assume the DB column is 'waybill_no' for consistency with concrete.
-                    # If the DB column is 'irsaliye_no', then excel_uploader mapping is wrong or DB is different.
-                    # Given I cannot check DB schema directly easily, I will support both keys for duplicate check.
-                    
-                    wayb = str(row.get('waybill_no') or row.get('irsaliye_no') or '').strip().upper()
-                    
-                    key = (d_str, supp, wayb)
-                    existing_keys.add(key)
-
-            new_data = []
+            data_to_insert = []
             skipped = 0
             skipped_rows = []
-            
-            for item in data_list:
-                i_date = item['date']
-                if 'T' in i_date: i_date = i_date.split('T')[0]
-                
-                i_supp = str(item['supplier']).strip().upper()
-                i_wayb = str(item.get('waybill_no') or item.get('irsaliye_no') or '').strip().upper()
-                
-                key = (i_date, i_supp, i_wayb)
-                
-                if key in existing_keys:
-                    skipped += 1
-                    if 'row_num' in item:
-                        skipped_rows.append(item['row_num'])
-                else:
-                    # Remove row_num before insertion as it's not in DB
-                    item_to_insert = item.copy()
-                    if 'row_num' in item_to_insert:
-                        del item_to_insert['row_num']
-                    
-                    new_data.append(item_to_insert)
-                    existing_keys.add(key)
 
-            if not new_data:
+            if skip_existing:
+                dates = []
+                for item in data_list:
+                    if isinstance(item.get('date'), (date, pd.Timestamp)):
+                        item['date'] = item['date'].isoformat() if hasattr(item['date'], 'isoformat') else str(item['date'])
+                    dates.append(item['date'])
+                
+                if not dates:
+                    return {'success': False, 'error': "No dates found in data"}
+
+                min_date = min(dates)
+                max_date = max(dates)
+
+                existing_logs = self.get_rebar_logs(start_date=min_date, end_date=max_date)
+                
+                existing_keys = set()
+                if not existing_logs.empty:
+                    for _, row in existing_logs.iterrows():
+                        d_val = row['date']
+                        d_str = d_val.strftime('%Y-%m-%d') if isinstance(d_val, pd.Timestamp) else str(d_val).split('T')[0]
+                        supp = str(row['supplier']).strip().upper()
+                        wayb = str(row.get('waybill_no') or row.get('irsaliye_no') or '').strip().upper()
+                        key = (d_str, supp, wayb)
+                        existing_keys.add(key)
+
+                for item in data_list:
+                    i_date = item['date']
+                    if 'T' in i_date: i_date = i_date.split('T')[0]
+                    i_supp = str(item['supplier']).strip().upper()
+                    i_wayb = str(item.get('waybill_no') or item.get('irsaliye_no') or '').strip().upper()
+                    
+                    key = (i_date, i_supp, i_wayb)
+                    
+                    if key in existing_keys:
+                        skipped += 1
+                        if 'row_num' in item:
+                            skipped_rows.append(item['row_num'])
+                    else:
+                        item_to_insert = item.copy()
+                        if 'row_num' in item_to_insert: del item_to_insert['row_num']
+                        data_to_insert.append(item_to_insert)
+                        existing_keys.add(key)
+            else:
+                # Prepare all data for insertion, removing row_num
+                for item in data_list:
+                    item_to_insert = item.copy()
+                    if 'row_num' in item_to_insert: del item_to_insert['row_num']
+                    data_to_insert.append(item_to_insert)
+
+            if not data_to_insert:
                 return {'success': True, 'total_inserted': 0, 'failed': 0, 'skipped': skipped, 'skipped_rows': skipped_rows, 'total_records': len(data_list), 'message': "All duplicates."}
 
             total_inserted = 0
             failed = 0
             
-            for i in range(0, len(new_data), batch_size):
-                batch = new_data[i:i + batch_size]
+            for i in range(0, len(data_to_insert), batch_size):
+                batch = data_to_insert[i:i + batch_size]
                 try:
                     response = self.client.table('rebar_logs').insert(batch).execute()
                     if response.data:

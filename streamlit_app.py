@@ -7,7 +7,7 @@ import streamlit as st
 import pandas as pd
 import io
 from datetime import datetime, date
-from db_manager_rest import get_db_manager_rest_v7
+from db_manager_rest import get_db_manager_rest_v8
 from excel_uploader import ExcelValidator
 import plotly.express as px
 import plotly.graph_objects as go
@@ -42,7 +42,7 @@ st.markdown("""
 
 @st.cache_resource
 def init_db_v4():
-    return get_db_manager_rest_v7()
+    return get_db_manager_rest_v8()
 
 # Cache data functions for performance
 @st.cache_data(ttl=600)  # Cache for 10 minutes
@@ -1079,66 +1079,90 @@ elif page == "📂 Toplu Excel Yükleme":
                 st.markdown("#### İlk 5 Kayıt:")
                 st.dataframe(df_preview.head(), use_container_width=True)
                 
-                if st.button(f"🚀 {len(clean_data)} Kaydı Veritabanına Aktar", type="primary"):
-                    # Modern status container kullanımı
-                    status = st.status("Veriler aktarılıyor...", expanded=True)
-                    
-                    try:
-                        result = {'success': False, 'total_inserted': 0, 'failed': 0}
+                # Duplicate Check for Rebar
+                final_data = clean_data
+                skip_existing = True
+                
+                if import_type == "⚙️ Demir":
+                    new_recs, dup_recs = db.check_rebar_duplicates(clean_data)
+                    if dup_recs:
+                        st.warning(f"⚠️ {len(dup_recs)} adet mükerrer olabilecek kayıt tespit edildi (Tarih, Firma ve Miktar aynı).")
+                        with st.expander("Mükerrer Kayıtları İncele"):
+                            st.dataframe(pd.DataFrame(dup_recs))
                         
-                        if import_type == "🧱 Beton":
-                            status.write("Beton verileri toplu yükleniyor...")
-                            result = db.bulk_insert_concrete(clean_data)
-                        elif import_type == "⚙️ Demir":
-                            status.write("Demir verileri toplu yükleniyor...")
-                            result = db.bulk_insert_rebar(clean_data)
+                        if st.checkbox("Mükerrer görünen bu kayıtları da ekle (Onaylıyorum)", value=False):
+                            final_data = clean_data # Insert all
+                            skip_existing = False # Force insert
+                            st.info("✅ Mükerrer kayıtlar da eklenecek.")
                         else:
-                            status.write("Hasır verileri toplu yükleniyor...")
-                            result = db.bulk_insert_mesh(clean_data)
+                            final_data = new_recs # Only new
+                            st.info(f"ℹ️ Sadece {len(new_recs)} yeni kayıt eklenecek.")
+                
+                if final_data:
+                    if st.button(f"🚀 {len(final_data)} Kaydı Veritabanına Aktar", type="primary"):
+                        # Modern status container kullanımı
+                        status = st.status("Veriler aktarılıyor...", expanded=True)
+                        
+                        try:
+                            result = {'success': False, 'total_inserted': 0, 'failed': 0}
                             
-                        if result.get('success'):
-                            success_count = result.get('total_inserted', 0)
-                            fail_count = result.get('failed', 0)
-                            skipped_count = result.get('skipped', 0)
-                            
-                            # İşlem bitti
-                            status.update(label="İşlem Tamamlandı!", state="complete", expanded=False)
-                            
-                            # Sonuç mesajları ve önbellek temizliği
-                            st.cache_data.clear()
-                            
-                            if fail_count == 0:
-                                msg = f"🎉 İşlem Başarılı! {success_count} yeni kayıt eklendi."
-                                if skipped_count > 0:
-                                    skipped_rows = result.get('skipped_rows', [])
-                                    if skipped_rows:
-                                        # Sort and format row numbers
-                                        skipped_rows.sort()
-                                        rows_str = ", ".join(map(str, skipped_rows[:20])) # Show first 20
-                                        if len(skipped_rows) > 20:
-                                            rows_str += "..."
-                                        msg += f" ({skipped_count} adet mükerrer kayıt atlandı. Satırlar: {rows_str})"
-                                    else:
-                                        msg += f" ({skipped_count} adet mükerrer kayıt atlandı)"
-                                st.success(msg)
-                                
-                                if success_count > 0:
-                                    st.balloons()
-                                    
-                                if st.button("Ana Sayfaya Dön ve Yenile"):
-                                     st.rerun()
+                            if import_type == "🧱 Beton":
+                                status.write("Beton verileri toplu yükleniyor...")
+                                result = db.bulk_insert_concrete(final_data)
+                            elif import_type == "⚙️ Demir":
+                                status.write("Demir verileri toplu yükleniyor...")
+                                # Use skip_existing param
+                                result = db.bulk_insert_rebar(final_data, skip_existing=skip_existing)
                             else:
-                                st.warning(f"⚠️ İşlem Tamamlandı: {success_count} başarılı, {skipped_count} atlandı, {fail_count} başarısız.")
-                                st.error("Bazı kayıtlar eklenemedi.")
-                                if st.button("Sayfayı Yenile"):
-                                     st.rerun()
-                        else:
-                            status.update(label="Hata Oluştu!", state="error", expanded=False)
-                            st.error(f"Toplu yükleme hatası: {result.get('error')}")
-                            
-                    except Exception as e:
-                        status.update(label="Kritik Hata!", state="error", expanded=False)
-                        st.error(f"Beklenmeyen hata: {str(e)}")
+                                status.write("Hasır verileri toplu yükleniyor...")
+                                result = db.bulk_insert_mesh(final_data)
+                                
+                            if result.get('success'):
+                                success_count = result.get('total_inserted', 0)
+                                fail_count = result.get('failed', 0)
+                                skipped_count = result.get('skipped', 0)
+                                
+                                # İşlem bitti
+                                status.update(label="İşlem Tamamlandı!", state="complete", expanded=False)
+                                
+                                # Sonuç mesajları ve önbellek temizliği
+                                st.cache_data.clear()
+                                
+                                if fail_count == 0:
+                                    msg = f"🎉 İşlem Başarılı! {success_count} yeni kayıt eklendi."
+                                    if skipped_count > 0:
+                                        skipped_rows = result.get('skipped_rows', [])
+                                        if skipped_rows:
+                                            # Sort and format row numbers
+                                            skipped_rows.sort()
+                                            rows_str = ", ".join(map(str, skipped_rows[:20])) # Show first 20
+                                            if len(skipped_rows) > 20:
+                                                rows_str += "..."
+                                            msg += f" ({skipped_count} adet mükerrer kayıt atlandı. Satırlar: {rows_str})"
+                                        else:
+                                            msg += f" ({skipped_count} adet mükerrer kayıt atlandı)"
+                                    st.success(msg)
+                                    
+                                    if success_count > 0:
+                                        st.balloons()
+                                        
+                                    if st.button("Ana Sayfaya Dön ve Yenile"):
+                                         st.rerun()
+                                else:
+                                    st.warning(f"⚠️ İşlem Tamamlandı: {success_count} başarılı, {skipped_count} atlandı, {fail_count} başarısız.")
+                                    st.error("Bazı kayıtlar eklenemedi.")
+                                    if st.button("Sayfayı Yenile"):
+                                         st.rerun()
+                            else:
+                                status.update(label="Hata Oluştu!", state="error", expanded=False)
+                                st.error(f"Toplu yükleme hatası: {result.get('error')}")
+                                
+                        except Exception as e:
+                            status.update(label="Kritik Hata!", state="error", expanded=False)
+                            st.error(f"Beklenmeyen hata: {str(e)}")
+                else:
+                    st.warning("Eklenecek yeni kayıt bulunamadı.")
+
 
         except Exception as e:
             st.error(f"Dosya okuma hatası: {str(e)}")
