@@ -224,6 +224,16 @@ class ExcelValidator:
                 
         return cleaned_data, errors
 
+    def _find_all_cols(self, df, patterns):
+        """Find ALL columns matching one of the regex patterns."""
+        matches = []
+        for col in df.columns:
+            for p in patterns:
+                if re.search(p, col, re.IGNORECASE):
+                    matches.append(col)
+                    break 
+        return matches
+
     def validate_rebar(self, df):
         cleaned_data = []
         errors = []
@@ -253,13 +263,13 @@ class ExcelValidator:
         
         if not col_map['date']: return [], ["'Tarih' sütunu bulunamadı."]
         
-        # Find diameter columns
+        # Find diameter columns (Allow multiple columns for same diameter)
         diameter_cols = {}
         for d in [8, 10, 12, 14, 16, 18, 20, 22, 25, 28, 32]:
             # Regex to find columns like "Q8", "8 lik", "Ø8"
             pat = rf"(^|\s|Q|Ø){d}(\s|'|’|l[ıi]k|mm|$)"
-            col = self._find_col(df, [pat])
-            if col: diameter_cols[d] = col
+            cols = self._find_all_cols(df, [pat])
+            if cols: diameter_cols[d] = cols
 
         for index, row in df.iterrows():
             row_num = index + 2 + (header_idx if header_idx != -1 else 0)
@@ -284,19 +294,26 @@ class ExcelValidator:
 
                 # Weights
                 total_weight = 0.0
-                for d, col in diameter_cols.items():
-                    val = self._parse_float(row.get(col))
-                    data[f'q{d}_kg'] = val
-                    total_weight += val
+                for d, cols in diameter_cols.items():
+                    d_total = 0.0
+                    for col in cols:
+                        val = self._parse_float(row.get(col))
+                        d_total += val
+                    
+                    data[f'q{d}_kg'] = d_total
+                    total_weight += d_total
                 
                 # Special case for Q24 mapped to Q25
-                col_24 = self._find_col(df, [r"(^|\s|Q|Ø)24(\s|'|’|l[ıi]k|mm|$)"])
-                if col_24:
-                    val_24 = self._parse_float(row.get(col_24))
-                    if val_24 > 0:
-                        data['q25_kg'] = data.get('q25_kg', 0) + val_24
-                        total_weight += val_24
-                        data['notes'] += f" | {val_24:.0f}kg Q24 (Q25'e eklendi)"
+                cols_24 = self._find_all_cols(df, [r"(^|\s|Q|Ø)24(\s|'|’|l[ıi]k|mm|$)"])
+                if cols_24:
+                    val_24_total = 0.0
+                    for col in cols_24:
+                        val_24_total += self._parse_float(row.get(col))
+                    
+                    if val_24_total > 0:
+                        data['q25_kg'] = data.get('q25_kg', 0) + val_24_total
+                        total_weight += val_24_total
+                        data['notes'] += f" | {val_24_total:.0f}kg Q24 (Q25'e eklendi)"
 
                 if total_weight <= 0: continue # Skip if no weight
                 
