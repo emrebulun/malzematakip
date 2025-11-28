@@ -302,6 +302,299 @@ class SupabaseManagerREST_v2:
             st.error(f"❌ Failed to group by location: {e}")
             return pd.DataFrame()
 
+    # ============================================
+    # REBAR OPERATIONS
+    # ============================================
+
+    def add_rebar(self, data: Dict) -> bool:
+        """Add a new rebar delivery record"""
+        try:
+            if isinstance(data.get('date'), date):
+                data['date'] = data['date'].isoformat()
+            
+            response = self.client.table('rebar_logs').insert(data).execute()
+            
+            if response.data:
+                st.success("✅ Rebar record added!")
+                return True
+            return False
+        except Exception as e:
+            st.error(f"❌ Failed to add rebar: {e}")
+            return False
+
+    def bulk_insert_rebar(self, data_list: List[Dict], batch_size: int = 500) -> Dict:
+        """Bulk insert rebar records in batches with duplicate check"""
+        try:
+            if not data_list:
+                return {'success': True, 'total_inserted': 0, 'failed': 0, 'skipped': 0, 'total_records': 0}
+
+            dates = []
+            for item in data_list:
+                if isinstance(item.get('date'), (date, pd.Timestamp)):
+                    item['date'] = item['date'].isoformat() if hasattr(item['date'], 'isoformat') else str(item['date'])
+                dates.append(item['date'])
+            
+            if not dates:
+                return {'success': False, 'error': "No dates found in data"}
+
+            min_date = min(dates)
+            max_date = max(dates)
+
+            existing_logs = self.get_rebar_logs(start_date=min_date, end_date=max_date)
+            
+            existing_keys = set()
+            if not existing_logs.empty:
+                for _, row in existing_logs.iterrows():
+                    d_val = row['date']
+                    if isinstance(d_val, pd.Timestamp):
+                        d_str = d_val.strftime('%Y-%m-%d')
+                    else:
+                        d_str = str(d_val).split('T')[0]
+                    
+                    supp = str(row['supplier']).strip().upper()
+                    # Rebar might use 'irsaliye_no' or 'waybill_no' depending on schema, assuming 'waybill_no' based on previous context or 'irsaliye_no'
+                    # Checking previous context, rebar_columns mapped 'İrsaliye No' to 'waybill_no'.
+                    # But wait, in add_rebar form in streamlit_app.py it uses 'irsaliye_no'. 
+                    # Let's check the schema or usage. In excel_uploader it maps to 'waybill_no'.
+                    # In streamlit_app.py add_rebar uses 'irsaliye_no'. This is inconsistent.
+                    # However, for bulk insert we are using data from excel_uploader which uses 'waybill_no'.
+                    # Let's assume the DB column is 'waybill_no' for consistency with concrete.
+                    # If the DB column is 'irsaliye_no', then excel_uploader mapping is wrong or DB is different.
+                    # Given I cannot check DB schema directly easily, I will support both keys for duplicate check.
+                    
+                    wayb = str(row.get('waybill_no') or row.get('irsaliye_no') or '').strip().upper()
+                    
+                    key = (d_str, supp, wayb)
+                    existing_keys.add(key)
+
+            new_data = []
+            skipped = 0
+            
+            for item in data_list:
+                i_date = item['date']
+                if 'T' in i_date: i_date = i_date.split('T')[0]
+                
+                i_supp = str(item['supplier']).strip().upper()
+                i_wayb = str(item.get('waybill_no') or item.get('irsaliye_no') or '').strip().upper()
+                
+                key = (i_date, i_supp, i_wayb)
+                
+                if key in existing_keys:
+                    skipped += 1
+                else:
+                    new_data.append(item)
+                    existing_keys.add(key)
+
+            if not new_data:
+                return {'success': True, 'total_inserted': 0, 'failed': 0, 'skipped': skipped, 'total_records': len(data_list), 'message': "All duplicates."}
+
+            total_inserted = 0
+            failed = 0
+            
+            for i in range(0, len(new_data), batch_size):
+                batch = new_data[i:i + batch_size]
+                try:
+                    response = self.client.table('rebar_logs').insert(batch).execute()
+                    if response.data:
+                        total_inserted += len(response.data)
+                except Exception as batch_error:
+                    st.warning(f"⚠️ Batch {i//batch_size + 1} failed: {batch_error}")
+                    failed += len(batch)
+            
+            return {'success': True, 'total_inserted': total_inserted, 'failed': failed, 'skipped': skipped, 'total_records': len(data_list)}
+            
+        except Exception as e:
+            st.error(f"❌ Bulk insert rebar failed: {e}")
+            return {'success': False, 'error': str(e)}
+
+    def get_rebar_logs(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> pd.DataFrame:
+        """Get rebar logs"""
+        try:
+            all_data = []
+            page_size = 1000
+            page = 0
+            while True:
+                query = self.client.table('rebar_logs').select("*")
+                if start_date: query = query.gte('date', start_date)
+                if end_date: query = query.lte('date', end_date)
+                
+                response = query.order('date', desc=True).range(page * page_size, (page + 1) * page_size - 1).execute()
+                if response.data:
+                    all_data.extend(response.data)
+                    if len(response.data) < page_size: break
+                    page += 1
+                else:
+                    break
+            
+            if all_data:
+                df = pd.DataFrame(all_data)
+                df['date'] = pd.to_datetime(df['date'])
+                return df
+            return pd.DataFrame()
+        except Exception as e:
+            st.error(f"❌ Failed to get rebar logs: {e}")
+            return pd.DataFrame()
+
+    def get_rebar_summary(self) -> Dict:
+        """Get rebar summary"""
+        try:
+            all_data = []
+            page_size = 1000
+            page = 0
+            while True:
+                response = self.client.table('rebar_logs').select("total_weight_kg").range(page * page_size, (page + 1) * page_size - 1).execute()
+                if response.data:
+                    all_data.extend(response.data)
+                    if len(response.data) < page_size: break
+                    page += 1
+                else:
+                    break
+            
+            if all_data:
+                df = pd.DataFrame(all_data)
+                return {
+                    'total_deliveries': len(df),
+                    'total_weight_kg': df['total_weight_kg'].sum()
+                }
+            return {}
+        except Exception as e:
+            st.error(f"❌ Failed to get rebar summary: {e}")
+            return {}
+
+    # ============================================
+    # MESH OPERATIONS
+    # ============================================
+
+    def add_mesh(self, data: Dict) -> bool:
+        """Add a new mesh delivery record"""
+        try:
+            if isinstance(data.get('date'), date):
+                data['date'] = data['date'].isoformat()
+            
+            response = self.client.table('mesh_logs').insert(data).execute()
+            if response.data:
+                st.success("✅ Mesh record added!")
+                return True
+            return False
+        except Exception as e:
+            st.error(f"❌ Failed to add mesh: {e}")
+            return False
+
+    def bulk_insert_mesh(self, data_list: List[Dict], batch_size: int = 500) -> Dict:
+        """Bulk insert mesh records"""
+        try:
+            if not data_list: return {'success': True, 'total_inserted': 0}
+
+            dates = []
+            for item in data_list:
+                if isinstance(item.get('date'), (date, pd.Timestamp)):
+                    item['date'] = item['date'].isoformat() if hasattr(item['date'], 'isoformat') else str(item['date'])
+                dates.append(item['date'])
+            
+            if not dates: return {'success': False, 'error': "No dates"}
+
+            min_date = min(dates)
+            max_date = max(dates)
+
+            existing_logs = self.get_mesh_logs(start_date=min_date, end_date=max_date)
+            existing_keys = set()
+            if not existing_logs.empty:
+                for _, row in existing_logs.iterrows():
+                    d_val = row['date']
+                    d_str = d_val.strftime('%Y-%m-%d') if isinstance(d_val, pd.Timestamp) else str(d_val).split('T')[0]
+                    supp = str(row['supplier']).strip().upper()
+                    wayb = str(row['waybill_no']).strip().upper()
+                    existing_keys.add((d_str, supp, wayb))
+
+            new_data = []
+            skipped = 0
+            for item in data_list:
+                i_date = item['date']
+                if 'T' in i_date: i_date = i_date.split('T')[0]
+                i_supp = str(item['supplier']).strip().upper()
+                i_wayb = str(item['waybill_no']).strip().upper()
+                
+                if (i_date, i_supp, i_wayb) in existing_keys:
+                    skipped += 1
+                else:
+                    new_data.append(item)
+                    existing_keys.add((i_date, i_supp, i_wayb))
+
+            if not new_data:
+                return {'success': True, 'total_inserted': 0, 'skipped': skipped, 'message': "All duplicates"}
+
+            total_inserted = 0
+            failed = 0
+            for i in range(0, len(new_data), batch_size):
+                batch = new_data[i:i + batch_size]
+                try:
+                    response = self.client.table('mesh_logs').insert(batch).execute()
+                    if response.data: total_inserted += len(response.data)
+                except Exception as batch_error:
+                    st.warning(f"⚠️ Batch failed: {batch_error}")
+                    failed += len(batch)
+            
+            return {'success': True, 'total_inserted': total_inserted, 'failed': failed, 'skipped': skipped}
+
+        except Exception as e:
+            st.error(f"❌ Bulk insert mesh failed: {e}")
+            return {'success': False, 'error': str(e)}
+
+    def get_mesh_logs(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> pd.DataFrame:
+        """Get mesh logs"""
+        try:
+            all_data = []
+            page_size = 1000
+            page = 0
+            while True:
+                query = self.client.table('mesh_logs').select("*")
+                if start_date: query = query.gte('date', start_date)
+                if end_date: query = query.lte('date', end_date)
+                
+                response = query.order('date', desc=True).range(page * page_size, (page + 1) * page_size - 1).execute()
+                if response.data:
+                    all_data.extend(response.data)
+                    if len(response.data) < page_size: break
+                    page += 1
+                else:
+                    break
+            
+            if all_data:
+                df = pd.DataFrame(all_data)
+                df['date'] = pd.to_datetime(df['date'])
+                return df
+            return pd.DataFrame()
+        except Exception as e:
+            st.error(f"❌ Failed to get mesh logs: {e}")
+            return pd.DataFrame()
+
+    def get_mesh_summary(self) -> Dict:
+        """Get mesh summary"""
+        try:
+            all_data = []
+            page_size = 1000
+            page = 0
+            while True:
+                response = self.client.table('mesh_logs').select("weight_kg, mesh_type, supplier").range(page * page_size, (page + 1) * page_size - 1).execute()
+                if response.data:
+                    all_data.extend(response.data)
+                    if len(response.data) < page_size: break
+                    page += 1
+                else:
+                    break
+            
+            if all_data:
+                df = pd.DataFrame(all_data)
+                return {
+                    'total_deliveries': len(df),
+                    'total_weight_kg': df['weight_kg'].sum(),
+                    'type_count': df['mesh_type'].nunique()
+                }
+            return {}
+        except Exception as e:
+            st.error(f"❌ Failed to get mesh summary: {e}")
+            return {}
+
     def delete_concrete_logs(self, start_date: Optional[str] = None, end_date: Optional[str] = None, supplier: Optional[str] = None) -> Dict:
         """Delete concrete logs with filters"""
         try:
