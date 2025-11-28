@@ -390,6 +390,7 @@ class ExcelValidator:
                 data['supplier'] = str(row.get(col_map['supplier'])).strip().upper() if col_map['supplier'] and pd.notna(row.get(col_map['supplier'])) else "BİLİNMEYEN"
                 
                 # Mesh Type
+                extra_note = ""
                 if col_map['mesh_type'] and pd.notna(row.get(col_map['mesh_type'])):
                     raw_type = str(row.get(col_map['mesh_type'])).strip().upper()
                     if raw_type.startswith('Q'): data['mesh_type'] = 'Q'
@@ -402,7 +403,6 @@ class ExcelValidator:
                         extra_note = f"Tip: {raw_type}"
                 else:
                     data['mesh_type'] = 'Q'
-                    extra_note = ""
 
                 # Counts
                 data['piece_count'] = int(self._parse_float(row.get(col_map['piece_count'])))
