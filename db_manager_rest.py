@@ -5,7 +5,7 @@ Much more reliable than direct PostgreSQL connection!
 
 import streamlit as st
 from supabase import create_client, Client
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 import pandas as pd
 from datetime import datetime, date
 
@@ -772,9 +772,9 @@ class SupabaseManagerREST_v2:
 # ============================================
 
 @st.cache_resource
-def get_db_manager_rest_v7() -> SupabaseManagerREST_v2:
-    """Get or create cached database manager instance (REST API) - V7"""
-    print("Initializing SupabaseManagerREST_v2 (V7)...")
+def get_db_manager_rest_v8() -> SupabaseManagerREST_v2:
+    """Get or create cached database manager instance (REST API) - V8"""
+    print("Initializing SupabaseManagerREST_v2 (V8)...")
     return SupabaseManagerREST_v2()
 
 
