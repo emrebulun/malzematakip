@@ -7,7 +7,7 @@ import streamlit as st
 import pandas as pd
 import io
 from datetime import datetime, date
-from db_manager_rest import get_db_manager_rest
+from db_manager_rest import get_db_manager_rest_v4
 from excel_uploader import ExcelValidator
 import plotly.express as px
 import plotly.graph_objects as go
@@ -39,9 +39,10 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Initialize database manager
+
 @st.cache_resource
-def init_db_v2():
-    return get_db_manager_rest()
+def init_db_v4():
+    return get_db_manager_rest_v4()
 
 # Cache data functions for performance
 @st.cache_data(ttl=600)  # Cache for 10 minutes
@@ -76,7 +77,7 @@ def get_cached_concrete_by_supplier():
 def get_cached_concrete_by_location():
     return db.get_concrete_by_location()
 
-db = init_db_v2()
+db = init_db_v4()
 
 # Sidebar
 st.sidebar.title("🏗️ Şantiye 997")
@@ -925,16 +926,55 @@ elif page == "📂 Toplu Excel Yükleme":
     import_type = st.radio("Yüklenecek Veri Tipi", ["🧱 Beton", "⚙️ Demir", "🔲 Hasır"], horizontal=True)
     
     # Veri Temizleme Bölümü
-    with st.expander("⚠️ Veri Temizleme (Dikkat)", expanded=False):
-        st.warning("Bu işlem seçili veri tipindeki TÜM kayıtları silecektir. Bu işlem geri alınamaz!")
-        if st.button("🗑️ Mevcut Verileri Sil", type="secondary"):
-            if import_type == "🧱 Beton":
-                if db.delete_all_concrete_logs():
-                    st.success("Tüm beton kayıtları silindi!")
-                    st.cache_data.clear()
-                    st.rerun()
+    with st.expander("🗑️ Veri Temizleme / Silme (Gelişmiş)", expanded=False):
+        st.warning("⚠️ Bu bölümdeki işlemler geri alınamaz! Lütfen dikkatli olun.")
+        
+        del_type = st.radio("Silinecek Veri Tipi", ["🧱 Beton", "⚙️ Demir", "🔲 Hasır"], horizontal=True, key="del_type")
+        
+        col_d1, col_d2 = st.columns(2)
+        with col_d1:
+            del_mode = st.radio("Silme Modu", ["Tarih Aralığına Göre", "Tedarikçiye Göre", "TÜMÜNÜ SİL"], key="del_mode")
+        
+        start_date = None
+        end_date = None
+        supplier_filter = None
+        
+        with col_d2:
+            if del_mode == "Tarih Aralığına Göre":
+                start_date = st.date_input("Başlangıç Tarihi", value=date.today(), key="del_start")
+                end_date = st.date_input("Bitiş Tarihi", value=date.today(), key="del_end")
+            elif del_mode == "Tedarikçiye Göre":
+                suppliers = db.get_all_suppliers()
+                supplier_filter = st.selectbox("Tedarikçi Seçin", suppliers, key="del_supp")
             else:
-                st.info("Bu özellik şu an sadece Beton için aktiftir.")
+                st.error("DİKKAT: Seçilen veri tipindeki TÜM kayıtlar silinecektir!")
+
+        if st.button("🗑️ Seçilenleri Sil", type="primary", use_container_width=True):
+            # Confirmation check
+            if del_mode == "TÜMÜNÜ SİL":
+                confirm = st.checkbox("Evet, tüm verileri silmek istediğimden eminim.")
+                if not confirm:
+                    st.warning("Lütfen silme işlemini onaylayın.")
+                    st.stop()
+            
+            result = {}
+            s_date_str = start_date.isoformat() if start_date else None
+            e_date_str = end_date.isoformat() if end_date else None
+            
+            if del_type == "🧱 Beton":
+                result = db.delete_concrete_logs(start_date=s_date_str, end_date=e_date_str, supplier=supplier_filter)
+            elif del_type == "⚙️ Demir":
+                result = db.delete_rebar_logs(start_date=s_date_str, end_date=e_date_str, supplier=supplier_filter)
+            else:
+                result = db.delete_mesh_logs(start_date=s_date_str, end_date=e_date_str, supplier=supplier_filter)
+            
+            if result.get('success'):
+                count = result.get('count', 0)
+                st.success(f"✅ İşlem Başarılı! Toplam {count} kayıt silindi.")
+                st.cache_data.clear()
+                # st.rerun() # Rerun immediately
+            else:
+                st.error(f"❌ Hata: {result.get('error')}")
 
     validator = ExcelValidator()
     
@@ -972,24 +1012,19 @@ elif page == "📂 Toplu Excel Yükleme":
             sheet_names = xl.sheet_names
             
             # Hangi sayfayı okuyacağız?
-            # Kullanıcıya sormak yerine, içinde anahtar kelimeler geçen sayfayı bulalım
-            target_sheet = sheet_names[0] # Varsayılan ilk sayfa
-            
-            # Eğer "Sayfa1" veya "Data" gibi isimler varsa öncelik ver
+            # Kullanıcıya seçtirme imkanı verelim
+            default_ix = 0
             priority_sheets = ['Sayfa1', 'Sayfa 1', 'Veri', 'Data', 'Beton', 'Demir', 'Hasır']
-            for p in priority_sheets:
-                # Büyük/küçük harf duyarsız ara
-                match = next((s for s in sheet_names if p.lower() in s.lower()), None)
-                if match:
-                    target_sheet = match
+            for i, name in enumerate(sheet_names):
+                if any(p.lower() in name.lower() for p in priority_sheets):
+                    default_ix = i
                     break
             
-            # Eğer kullanıcı manuel seçmek isterse diye seçenek ekleyebiliriz ama şimdilik otomatize edelim
-            # Belki ileride selectbox eklenir: st.selectbox("Sayfa Seçiniz", sheet_names)
+            selected_sheet = st.selectbox("Hangi Sayfadan Veri Okunsun?", sheet_names, index=default_ix)
             
-            df = pd.read_excel(uploaded_file, sheet_name=target_sheet)
+            df = pd.read_excel(uploaded_file, sheet_name=selected_sheet)
             
-            # Remove rows with less than 3 non-empty columns (User Request: Ignore rows with <3 columns of data)
+            # Remove rows with less than 3 non-empty columns
             original_len = len(df)
             df = df.dropna(thresh=3)
             filtered_len = len(df)
@@ -997,7 +1032,7 @@ elif page == "📂 Toplu Excel Yükleme":
             if original_len != filtered_len:
                 st.warning(f"⚠️ {original_len - filtered_len} adet eksik veri içeren satır (3 sütundan az veri) yoksayıldı.")
 
-            st.info(f"📄 '{target_sheet}' sayfası okunuyor ({len(df)} satır)...")
+            st.info(f"📄 '{selected_sheet}' sayfası okunuyor ({len(df)} satır)...")
 
             clean_data = []
             errors = []
@@ -1015,8 +1050,32 @@ elif page == "📂 Toplu Excel Yükleme":
                     for err in errors:
                         st.write(f"- {err}")
             else:
-                st.success("✅ Tüm veriler doğrulandı! Yüklemeye hazır.")
-                st.dataframe(pd.DataFrame(clean_data).head(), use_container_width=True)
+                # Calculate Total Quantity for Verification
+                df_preview = pd.DataFrame(clean_data)
+                
+                total_qty = 0
+                unit = ""
+                if import_type == "🧱 Beton":
+                    total_qty = df_preview['quantity_m3'].sum()
+                    unit = "m³"
+                elif import_type == "⚙️ Demir":
+                    total_qty = df_preview['total_weight_kg'].sum()
+                    unit = "kg"
+                else:
+                    total_qty = df_preview['weight_kg'].sum()
+                    unit = "kg"
+                
+                st.markdown(f"### 📊 Önizleme Özeti")
+                col_prev1, col_prev2 = st.columns(2)
+                with col_prev1:
+                    st.metric("Tespit Edilen Toplam Miktar", f"{total_qty:,.2f} {unit}")
+                with col_prev2:
+                    st.metric("Okunacak Kayıt Sayısı", f"{len(clean_data)} adet")
+                
+                st.info("👆 Lütfen yukarıdaki toplam miktarın Excel dosyanızdaki toplamla eşleştiğini kontrol edin.")
+                
+                st.markdown("#### İlk 5 Kayıt:")
+                st.dataframe(df_preview.head(), use_container_width=True)
                 
                 if st.button(f"🚀 {len(clean_data)} Kaydı Veritabanına Aktar", type="primary"):
                     # Modern status container kullanımı
@@ -1038,6 +1097,7 @@ elif page == "📂 Toplu Excel Yükleme":
                         if result.get('success'):
                             success_count = result.get('total_inserted', 0)
                             fail_count = result.get('failed', 0)
+                            skipped_count = result.get('skipped', 0)
                             
                             # İşlem bitti
                             status.update(label="İşlem Tamamlandı!", state="complete", expanded=False)
@@ -1046,12 +1106,18 @@ elif page == "📂 Toplu Excel Yükleme":
                             st.cache_data.clear()
                             
                             if fail_count == 0:
-                                st.success(f"🎉 Harika! {success_count} kayıt başarıyla eklendi.")
-                                st.balloons()
+                                msg = f"🎉 İşlem Başarılı! {success_count} yeni kayıt eklendi."
+                                if skipped_count > 0:
+                                    msg += f" ({skipped_count} adet mükerrer kayıt atlandı)"
+                                st.success(msg)
+                                
+                                if success_count > 0:
+                                    st.balloons()
+                                    
                                 if st.button("Ana Sayfaya Dön ve Yenile"):
                                      st.rerun()
                             else:
-                                st.warning(f"⚠️ İşlem Tamamlandı: {success_count} başarılı, {fail_count} başarısız.")
+                                st.warning(f"⚠️ İşlem Tamamlandı: {success_count} başarılı, {skipped_count} atlandı, {fail_count} başarısız.")
                                 st.error("Bazı kayıtlar eklenemedi.")
                                 if st.button("Sayfayı Yenile"):
                                      st.rerun()

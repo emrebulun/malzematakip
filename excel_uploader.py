@@ -1,9 +1,12 @@
 import pandas as pd
 import numpy as np
 from datetime import datetime
+import hashlib
+import re
 
 class ExcelValidator:
     def __init__(self):
+        # Standard column mappings (User friendly name -> Internal key)
         self.concrete_columns = {
             'Tarih': 'date',
             'Firma': 'supplier',
@@ -21,10 +24,8 @@ class ExcelValidator:
             'İrsaliye No': 'waybill_no',
             'Etap': 'project_stage',
             'Üretici': 'manufacturer',
-            'Q8': 'q8_kg', 'Q10': 'q10_kg', 'Q12': 'q12_kg', 'Q14': 'q14_kg',
-            'Q16': 'q16_kg', 'Q18': 'q18_kg', 'Q20': 'q20_kg', 'Q22': 'q22_kg',
-            'Q25': 'q25_kg', 'Q28': 'q28_kg', 'Q32': 'q32_kg',
             'Notlar': 'notes'
+            # Diameter columns are dynamic (Q8, Q10...)
         }
         
         self.mesh_columns = {
@@ -39,607 +40,371 @@ class ExcelValidator:
             'Notlar': 'notes'
         }
 
+    def _is_header_row(self, values, keywords, min_matches=2):
+        """Check if a list of values looks like a header row."""
+        row_values = [str(v).upper().strip() for v in values if pd.notna(v)]
+        match_count = sum(1 for k in keywords if any(k in rv for rv in row_values))
+        return match_count >= min_matches
+
+    def _find_header_row(self, df, keywords, min_matches=2):
+        """Find the header row index by looking for keywords."""
+        # First check existing columns
+        if self._is_header_row(df.columns, keywords, min_matches):
+            return -1 # Indicates existing columns are headers
+            
+        for i in range(min(20, len(df))):
+            if self._is_header_row(df.iloc[i], keywords, min_matches):
+                return i
+        return None
+
+    def _clean_column_names(self, df):
+        """Clean column names: strip whitespace, upper case, remove Unnamed."""
+        df.columns = [str(c).strip().upper() for c in df.columns]
+        return df
+
+    def _find_col(self, df, patterns):
+        """Find a column matching one of the regex patterns."""
+        for col in df.columns:
+            for p in patterns:
+                if re.search(p, col, re.IGNORECASE):
+                    return col
+        return None
+
+    def _parse_date(self, val):
+        """Parse date from various formats."""
+        if pd.isna(val): return None
+        
+        if isinstance(val, datetime):
+            return val.strftime('%Y-%m-%d')
+            
+        s_val = str(val).strip()
+        if not s_val: return None
+        
+        # Try common formats
+        formats = ['%Y-%m-%d', '%d.%m.%Y', '%d/%m/%Y', '%Y.%m.%d', '%d-%m-%Y']
+        for fmt in formats:
+            try:
+                return pd.to_datetime(s_val, dayfirst=True).strftime('%Y-%m-%d')
+            except:
+                continue
+        return None
+
+    def _parse_float(self, val):
+        """Parse float from string with comma/dot handling."""
+        if pd.isna(val): return 0.0
+        if isinstance(val, (int, float)): return float(val)
+        
+        s_val = str(val).strip()
+        if not s_val: return 0.0
+        
+        # Remove non-numeric chars except , .
+        clean_val = re.sub(r'[^\d.,]', '', s_val)
+        if not clean_val: return 0.0
+        
+        # 1.234,56 -> 1234.56
+        if ',' in clean_val and '.' in clean_val:
+            if clean_val.find('.') < clean_val.find(','): # 1.234,56
+                clean_val = clean_val.replace('.', '').replace(',', '.')
+            else: # 1,234.56
+                clean_val = clean_val.replace(',', '')
+        elif ',' in clean_val:
+            clean_val = clean_val.replace(',', '.')
+            
+        try:
+            return float(clean_val)
+        except:
+            return 0.0
+
     def validate_concrete(self, df):
         cleaned_data = []
         errors = []
-        import re
         
-        # --- BAŞLIK SATIRINI BULMA (Gelişmiş) ---
-        header_row_idx = 0
-        found_header = False
+        # 1. Find Header
+        keywords = ['TARİH', 'FİRMA', 'BETON', 'SINIF', 'MİKTAR', 'İRSALİYE']
+        header_idx = self._find_header_row(df, keywords)
         
-        # İlk 30 satırı tara ve en iyi başlık adayını bul
-        best_score = 0
-        best_idx = 0
+        if header_idx == -1:
+            # Existing columns are headers
+            pass
+        else:
+            if header_idx is None:
+                # Fallback: Check if first row is header
+                header_idx = 0
+                
+            # Reset dataframe to start from header
+            df = df.iloc[header_idx:].reset_index(drop=True)
+            df.columns = df.iloc[0]
+            df = df.iloc[1:].reset_index(drop=True)
         
-        keywords = ['BETON', 'TESLİM', 'MİKTAR', 'FİRMA', 'SINIF', 'CİNSİ', 'İRSALİYE', 'TARİH', 'PLAKA', 'BLOK']
+        self._clean_column_names(df)
         
-        for i in range(min(30, len(df))):
-            row_values = [str(v).upper().strip() for v in df.iloc[i].tolist() if pd.notna(v)]
-            # Satırdaki anahtar kelime sayısı
-            score = sum(1 for k in keywords if any(k in rv for rv in row_values))
-            
-            if score > best_score:
-                best_score = score
-                best_idx = i
+        # 2. Map Columns
+        col_map = {}
+        col_map['date'] = self._find_col(df, [r'TAR[İI]H', r'DATE'])
+        col_map['supplier'] = self._find_col(df, [r'F[İI]RMA', r'TEDAR[İI]K', r'BETONCU'])
+        col_map['waybill_no'] = self._find_col(df, [r'[İI]RSAL[İI]YE', r'F[İI][ŞS]'])
+        col_map['concrete_class'] = self._find_col(df, [r'SINIF', r'C[İI]NS', r'DAYANIM'])
+        col_map['quantity_m3'] = self._find_col(df, [r'M[İI]KTAR', r'M3', r'ADET'])
+        col_map['delivery_method'] = self._find_col(df, [r'TESL[İI]M', r'POMPA'])
+        col_map['location_block'] = self._find_col(df, [r'BLOK', r'YER', r'MAHAL'])
+        col_map['notes'] = self._find_col(df, [r'AÇIKLAMA', r'NOT'])
         
-        # Eğer en az 2 anahtar kelime bulduysak, o satırı başlık yap
-        if best_score >= 2:
-            header_row_idx = best_idx
-            new_header = df.iloc[best_idx]
-            df = df[best_idx+1:].reset_index(drop=True)
-            df.columns = new_header
-            found_header = True
-            
-        # --- SÜTUNLARI BULMA VE TEMİZLEME ---
-        # Unnamed sütunları atma, belki veri vardır.
-        # Ama sütun isimlerini string yapalım
-        df.columns = [str(c).upper().strip() for c in df.columns]
-
-        # Yardımcı: Sütun Bul (Regex destekli)
-        def find_col(patterns):
-            for i, col in enumerate(df.columns):
-                for p in patterns:
-                    if re.search(p, str(col), re.IGNORECASE):
-                        return df.columns[i]
-            return None
-
-        # Sütun Eşleştirme (Regex ile daha esnek)
-        # Tarih: TARİH, TARIH veya DATE
-        date_col = find_col([r'TAR[İI]H', r'DATE', r'ZAMAN'])
-        
-        # Firma: FİRMA, TEDARİK, BETONCU, CARİ
-        supplier_col = find_col([r'F[İI]RMA', r'TEDAR[İI]K', r'BETONCU', r'CAR[İI]'])
-        
-        # İrsaliye: İRSALİYE, FİŞ, BELGE
-        waybill_col = find_col([r'[İI]RSAL[İI]YE', r'F[İI][ŞS]', r'BELGE'])
-        
-        # Beton Sınıfı: SINIF, CİNS, DAYANIM
-        class_col = find_col([r'SINIF', r'C[İI]NS', r'DAYANIM', r'BETON'])
-        
-        # Miktar: MİKTAR, M3, ADET, METREKÜP
-        qty_col = find_col([r'M[İI]KTAR', r'M3', r'ADET', r'METREK'])
-        
-        # Teslimat: TESLİM, YÖNTEM, POMPA
-        method_col = find_col([r'TESL[İI]M', r'Y[ÖO]NTEM', r'ARAÇ'])
-        
-        # Blok: BLOK, YER, MAHAL
-        block_col = find_col([r'BLOK', r'YER', r'MAHAL', r'KONUM'])
-        
-        # Notlar
-        notes_col = find_col([r'AÇIKLAMA', r'NOT', r'DETAY'])
-        
-        # --- EKSİK SÜTUN KURTARMA (Fallback) ---
-        
-        # 1. Tarih sütunu bulunamadıysa, veriye bakarak bul
-        if not date_col:
-            for col in df.columns:
-                try:
-                    # İlk 10 dolu satıra bak
-                    if isinstance(df[col], pd.DataFrame): continue # Duplicate column
-                    sample = df[col].dropna().head(10).astype(str).tolist()
-                    # Regex: GG.AA.YYYY veya YYYY-MM-DD
-                    if any(re.search(r'(\d{2}[./-]\d{2}[./-]\d{4})|(\d{4}-\d{2}-\d{2})', s) for s in sample):
-                        date_col = col
-                        break
-                except: continue
-
-        # 3. Miktar Sütunu Bulunamadıysa (Fallback)
-        if not qty_col:
-            # Sayısal sütunları tara
-            for col in df.columns:
-                try:
-                    if col in [date_col, supplier_col, waybill_col, class_col]: continue
-                    if isinstance(df[col], pd.DataFrame): continue
-                    
-                    # Sütunu sayıya çevirmeyi dene
-                    # Önce stringe çevirip temizle
-                    sample_raw = df[col].dropna().head(20).astype(str).tolist()
-                    clean_sample = []
-                    for s in sample_raw:
-                        s_clean = re.sub(r'[^\d.,]', '', s)
-                        # Virgül nokta düzeltmesi
-                        if ',' in s_clean and '.' in s_clean: s_clean = s_clean.replace('.', '').replace(',', '.')
-                        elif ',' in s_clean: s_clean = s_clean.replace(',', '.')
-                        if s_clean: clean_sample.append(float(s_clean))
-                    
-                    if not clean_sample: continue
-                    
-                    # Beton miktarı genelde 1 ile 25 m3 arasıdır (mikser başına)
-                    # Veya toplam döküm ise daha büyük olabilir.
-                    # Fiyat sütunuyla karışmaması için (Fiyat genelde 1000+ olur)
-                    avg = sum(clean_sample) / len(clean_sample)
-                    
-                    # Eğer ortalama değer 0.5 ile 150 arasındaysa bu Miktar olabilir
-                    # Beton fiyatı genelde 1500-3000 TL olduğu için ondan ayrılır
-                    if 0.5 < avg < 150:
-                        qty_col = col
-                        # print(f"Tahmini Miktar Sütunu: {col} (Ort: {avg})")
-                        break
-                except: continue
-
-        if not (date_col and class_col):
-             return [], [f"Kritik sütunlar (Tarih: {date_col}, Sınıf: {class_col}) bulunamadı. Başlık satırını kontrol edin."]
-             
-        # Miktar sütunu hala yoksa hata vermek yerine uyaralım ama işlem yapamayız
-        if not qty_col:
-             return [], [f"Miktar (m³) sütunu bulunamadı. Sütun başlığında 'Miktar', 'M3' veya 'Adet' olduğundan emin olun."]
+        # Critical columns check
+        if not col_map['date']:
+            return [], ["'Tarih' sütunu bulunamadı."]
+        if not col_map['quantity_m3']:
+            return [], ["'Miktar' (m3) sütunu bulunamadı."]
 
         valid_classes = ['C16', 'C20', 'C25', 'C30', 'C35', 'C40', 'GRO', 'ŞAP', 'KUM', 'TAS', 'TAŞ']
 
         for index, row in df.iterrows():
-            row_num = index + 2 + (header_row_idx if found_header else 0)
+            row_num = index + 2 + (header_idx if header_idx != -1 else 0)
             try:
+                # Skip empty rows
+                if row.dropna().empty: continue
+                
+                # Skip "Total" rows
+                row_str = " ".join([str(v).upper() for v in row.values if pd.notna(v)])
+                if "TOPLAM" in row_str or "GENEL" in row_str: continue
+
                 data = {}
                 
-                # BOŞ SATIR KONTROLÜ
-                # Eğer satır tamamen boşsa atla
-                if row.dropna().empty:
-                    continue
-
-                # Dolu hücre sayısı kontrolü (Satırın çoğunluğu boş mu?)
-                # Sadece pd.notna yetmez, string'e çevirip strip edince boş kalıyor mu ona da bakmalı.
-                real_values = []
-                for val in row:
-                    if pd.notna(val):
-                        s_val = str(val).strip()
-                        if s_val and s_val.lower() != 'nan' and s_val.lower() != 'none':
-                            real_values.append(s_val)
+                # Date
+                data['date'] = self._parse_date(row.get(col_map['date']))
+                if not data['date']: continue # Skip rows without valid date
                 
-                non_empty_count = len(real_values)
+                # Quantity
+                qty = self._parse_float(row.get(col_map['quantity_m3']))
+                if qty <= 0: continue # Skip rows with 0 quantity
+                data['quantity_m3'] = qty
                 
-                # Kullanıcı isteği: 4'ten az sütun doluysa satırı yok say
-                if non_empty_count < 4:
-                    continue
-
-
-
-
-                # --- AKILLI VERİ OKUMA (Smart Scan) ---
-                # Satır kaymalarına karşı tüm satırı tarayarak Tarih ve Miktar bulmaya çalışacağız.
-                
-                found_date_val = None
-                found_qty_val = None
-                
-                # 1. Önce belirlenen sütunlara bak
-                if pd.notna(row[date_col]): found_date_val = row[date_col]
-                
-                if qty_col and pd.notna(row[qty_col]):
-                    # Miktar sütunundaki değerin gerçekten sayısal olup olmadığını kontrol et
-                    # Eğer "Pompalı" veya boşluk varsa bunu miktar olarak kabul etme, taramaya bırak
-                    raw_v = str(row[qty_col]).strip()
-                    # En az bir rakam içermeli
-                    if any(c.isdigit() for c in raw_v):
-                         found_qty_val = row[qty_col]
-                
-                # 2. Eğer tarih yoksa satırı tara
-                if not found_date_val:
-                    for val in row:
-                        if pd.isna(val): continue
-                        s_val = str(val).strip()
-                        # Basit tarih regex kontrolü
-                        if re.search(r'(\d{2}[./-]\d{2}[./-]\d{4})|(\d{4}-\d{2}-\d{2})', s_val):
-                            found_date_val = val
-                            break
-                            
-                # 3. Eğer miktar yoksa satırı tara (Sayısal değer ara)
-                if not found_qty_val:
-                    for col_name, val in row.items():
-                        # Tarih veya metin sütunlarını atla
-                        if col_name == date_col or col_name == supplier_col or col_name == class_col: continue
-                        if pd.isna(val): continue
-                        
-                        try:
-                            # Temizle ve sayıya çevir
-                            s_val = str(val).strip()
-                            
-                            # Eğer hücrede "ETAP", "KAT", "BLOK", "NO" gibi kelimeler varsa bu miktar değildir
-                            if any(x in s_val.upper() for x in ['ETAP', 'KAT', 'BLOK', 'NO', 'MAHAL']):
-                                continue
-                                
-                            clean_val = re.sub(r'[^\d.,]', '', s_val)
-                            if not clean_val: continue
-                            
-                            if ',' in clean_val and '.' in clean_val:
-                                f_val = float(clean_val.replace('.', '').replace(',', '.'))
-                            elif ',' in clean_val:
-                                f_val = float(clean_val.replace(',', '.'))
-                            else:
-                                f_val = float(clean_val)
-                                
-                            # Mantıklı bir beton miktarı mı? (0.5 - 150 m3)
-                            if 0.5 <= f_val <= 150:
-                                found_qty_val = f_val
-                                break
-                        except:
-                            continue
-
-                # 4. KARAR MEKANİZMASI
-                # Eğer ne tarih ne de miktar bulunduysa -> BU BİR ÇÖP/EKSTRA SATIRDIR -> ATLA
-                if not found_date_val and not found_qty_val:
-                    continue
-                    
-                # Kullanıcı İsteği: Eğer miktar yoksa veya 0'dan büyük değilse satırı dikkate alma
-                # Yani "Miktar bulunamadı" hatası vermek yerine sessizce atla.
-                if not found_qty_val:
-                    continue
-                    
-                # Eğer miktar var ama tarih yoksa -> Bu durumda da atlayalım mı yoksa hata mı verelim?
-                # Kullanıcı "ne miktar dolu ne de tarih" dediği senaryoda zaten ilk if yakalıyor.
-                # Ancak "sadece miktar var tarih yok" durumu nadirdir ama yine de güvenli olması için
-                # eğer tarih yoksa da atlayalım (belki toplam satırıdır).
-                if not found_date_val:
-                    continue
-
-                # --- VERİ İŞLEME ---
-                
-                # Tarih Formatlama
-                try:
-                    if isinstance(found_date_val, datetime):
-                         data['date'] = found_date_val.strftime('%Y-%m-%d')
-                    else:
-                        found_date = False
-                        raw_date_str = str(found_date_val).strip()
-                        for fmt in ['%d.%m.%Y', '%Y-%m-%d', '%d/%m/%Y', '%Y.%m.%d']:
-                            try:
-                                data['date'] = pd.to_datetime(raw_date_str, dayfirst=True).strftime('%Y-%m-%d')
-                                found_date = True
-                                break
-                            except:
-                                continue
-                        if not found_date: raise ValueError("Tarih formatı geçersiz")
-                except:
-                    raise ValueError("Tarih formatı hatalı")
-
-                # Firma
-                if supplier_col and pd.notna(row[supplier_col]):
-                    data['supplier'] = str(row[supplier_col]).strip().upper()
+                # Supplier
+                if col_map['supplier'] and pd.notna(row.get(col_map['supplier'])):
+                    data['supplier'] = str(row.get(col_map['supplier'])).strip().upper()
                 else:
-                    data['supplier'] = "BİLİNMEYEN FİRMA"
-
-                # İrsaliye
-                if waybill_col and pd.notna(row[waybill_col]):
-                    data['waybill_no'] = str(row[waybill_col]).strip()
-                else:
-                    # Benzersiz bir irsaliye üret (Tarih + Rastgele)
-                    import random
-                    data['waybill_no'] = f"AUTO-{data['date'].replace('-','')}-{random.randint(1000,9999)}"
-
-                # Beton Sınıfı
-                if class_col:
-                    raw_class = str(row[class_col]).strip().upper().replace(" ", "")
-                    # İçinde geçerli sınıf geçiyor mu? (Örn: "C30 HAZIR BETON" -> "C30")
-                    matched_class = next((c for c in valid_classes if c in raw_class), None)
-                    if matched_class:
-                        data['concrete_class'] = matched_class
-                    else:
-                        # GROBETON -> GRO
-                        if "GRO" in raw_class: data['concrete_class'] = "GRO"
-                        else: data['concrete_class'] = "Diğer" # Veritabanı enum hatası vermesin
+                    data['supplier'] = "BİLİNMEYEN"
                 
-                # Teslimat Şekli
-                if method_col:
-                    d_method = str(row[method_col]).strip().upper()
-                    if "POMPA" in d_method: data['delivery_method'] = "POMPALI"
-                    elif "MİKSER" in d_method: data['delivery_method'] = "MİKSERLİ"
-                    else: data['delivery_method'] = "MİKSERLİ" # Varsayılan
+                # Concrete Class
+                if col_map['concrete_class'] and pd.notna(row.get(col_map['concrete_class'])):
+                    raw_class = str(row.get(col_map['concrete_class'])).strip().upper().replace(" ", "")
+                    matched = next((c for c in valid_classes if c in raw_class), None)
+                    data['concrete_class'] = matched if matched else "Diğer"
+                else:
+                    data['concrete_class'] = "Diğer"
+                
+                # Delivery Method
+                if col_map['delivery_method'] and pd.notna(row.get(col_map['delivery_method'])):
+                    d_method = str(row.get(col_map['delivery_method'])).strip().upper()
+                    data['delivery_method'] = "POMPALI" if "POMPA" in d_method else "MİKSERLİ"
                 else:
                     data['delivery_method'] = "MİKSERLİ"
-
-                # Miktar İşleme
-                try:
-                    if isinstance(found_qty_val, (int, float)):
-                        data['quantity_m3'] = float(found_qty_val)
+                
+                # Location & Notes
+                data['location_block'] = str(row.get(col_map['location_block'])).strip() if col_map['location_block'] and pd.notna(row.get(col_map['location_block'])) else None
+                data['notes'] = str(row.get(col_map['notes'])).strip() if col_map['notes'] and pd.notna(row.get(col_map['notes'])) else None
+                
+                # Waybill No (Critical for duplicates)
+                if col_map['waybill_no'] and pd.notna(row.get(col_map['waybill_no'])):
+                    wb = str(row.get(col_map['waybill_no'])).strip().upper()
+                    if wb:
+                        data['waybill_no'] = wb
                     else:
-                        # String ise temizle
-                        raw_qty = str(found_qty_val)
-                        clean_qty = re.sub(r'[^\d.,]', '', raw_qty)
-                        if ',' in clean_qty and '.' in clean_qty:
-                            clean_qty = clean_qty.replace('.', '').replace(',', '.')
-                        elif ',' in clean_qty:
-                             clean_qty = clean_qty.replace(',', '.')
-                        data['quantity_m3'] = float(clean_qty)
-                except:
-                    raise ValueError("Miktar okunamadı")
-
-                if data['quantity_m3'] <= 0: raise ValueError("Miktar 0 olamaz")
-
-                data['location_block'] = str(row[block_col]) if block_col and pd.notna(row[block_col]) else None
-                data['notes'] = str(row[notes_col]) if notes_col and pd.notna(row[notes_col]) else None
+                        # Generate hash
+                        unique_str = f"{data['date']}_{data['supplier']}_{data['concrete_class']}_{data['quantity_m3']:.2f}_{data['location_block'] or ''}"
+                        data['waybill_no'] = f"AUTO-{hashlib.md5(unique_str.encode()).hexdigest()[:8]}"
+                else:
+                    # Generate hash
+                    unique_str = f"{data['date']}_{data['supplier']}_{data['concrete_class']}_{data['quantity_m3']:.2f}_{data['location_block'] or ''}"
+                    data['waybill_no'] = f"AUTO-{hashlib.md5(unique_str.encode()).hexdigest()[:8]}"
 
                 cleaned_data.append(data)
-
+                
             except Exception as e:
                 errors.append(f"Satır {row_num}: {str(e)}")
-
+                
         return cleaned_data, errors
 
     def validate_rebar(self, df):
         cleaned_data = []
         errors = []
         
-        # Regex modülü
-        import re
+        # 1. Find Header
+        keywords = ['TARİH', 'FİRMA', 'TEDARİK', 'İRSALİYE', 'DEMİR', 'ÇAP']
+        header_idx = self._find_header_row(df, keywords)
         
-        # --- BAŞLIK SATIRINI BULMA (Header Detection) ---
-        # Excel'in ilk 10 satırına bakıp içinde "Tarih" ve "Firma" geçen satırı başlık kabul edelim
-        header_row_idx = 0
-        found_header = False
-        
-        # İlk 15 satırı kontrol et
-        for i in range(min(15, len(df))):
-            # Satırdaki değerleri string'e çevirip birleştir, içinde anahtar kelimeler var mı bak
-            row_values = [str(v).upper().strip() for v in df.iloc[i].tolist() if pd.notna(v)]
-            
-            # Anahtar kelimelerden en az 2'si varsa bu başlık satırıdır
-            keywords = ['TARİH', 'FİRMA', 'TEDARİK', 'İRSALİYE', 'IRSALIYE', 'ETAP', 'AÇIKLAMA', 'NOT']
-            match_count = sum(1 for k in keywords if any(k in rv for rv in row_values))
-            
-            if match_count >= 2:
-                header_row_idx = i
-                
-                # Düzeltme: Dosyayı tekrar okumak yerine mevcut DataFrame'i kullan
-                # i. satırı başlık yap, i+1'den sonrasını veri olarak al
-                new_header = df.iloc[i]
-                df = df[i+1:].reset_index(drop=True)
-                df.columns = new_header
-                found_header = True
-                break
-        
-        if not found_header:
-             # Bulamazsa varsayılan ilk satırı kullanır
-             pass
-             
-        # --- SÜTUNLARI BULMA VE TEMİZLEME ---
-        # Unnamed sütunları temizle ve boşlukları al
-        df = df.loc[:, ~df.columns.astype(str).str.contains('^Unnamed')]
-        cols = [str(c).upper().strip() for c in df.columns]
-        df.columns = cols # Temizlenmiş başlıkları geri yükle
-
-        # Yardımcı: Bir kelime içeren sütun ismini bul
-        def find_col(keywords):
-            for i, col in enumerate(df.columns):
-                for kw in keywords:
-                    if kw in str(col).upper():
-                        return df.columns[i]
-            return None
-
-        supplier_col = find_col(['TEDARİK', 'FİRMA', 'FİRMASI', 'CARİ', 'UNVAN'])
-        waybill_col = find_col(['İRSALİYE', 'IRSALIYE', 'FİŞ', 'BELGE'])
-        date_col = find_col(['TARİH', 'TARIH', 'ZAMAN'])
-
-        # Demir dosyasında Firma/Tedarikçi sütunu yoksa, İrsaliye'den önceki veya sonraki sütun olabilir mi?
-        # Veya görseldeki gibi sadece tarih, etap, irsaliye var, firma sütunu unutulmuş olabilir mi?
-        # Eğer Firma yoksa "BİLİNMEYEN" olarak devam edelim, kullanıcıya hata verdirmeyelim (Geçici Çözüm)
-        if not supplier_col:
-            # Belki sütun adı boştur? İlk string içeren sütunu firma sayabiliriz ama riskli.
+        if header_idx == -1:
             pass
-
-        if not (waybill_col and date_col):
-             missing = []
-             if not waybill_col: missing.append("İrsaliye No")
-             if not date_col: missing.append("Tarih")
-             return [], [f"Kritik sütunlar bulunamadı: {', '.join(missing)}. Excel başlık satırını kontrol edin (Tarih, İrsaliye)."]
-
-        # Esnek Sütun Eşleştirme (Çap numarasını yakalamak için)
-        def find_columns_by_diameter(columns, diameter):
-            matches = []
-            pattern = re.compile(rf"(^|\s|Q){diameter}(\s|'|’|l[ıi]k|l[uü]k|$)", re.IGNORECASE)
-            for col in columns:
-                if pattern.search(str(col)):
-                    matches.append(col)
-            return matches
+        else:
+            if header_idx is None: header_idx = 0
+                
+            df = df.iloc[header_idx:].reset_index(drop=True)
+            df.columns = df.iloc[0]
+            df = df.iloc[1:].reset_index(drop=True)
+        self._clean_column_names(df)
+        
+        # 2. Map Columns
+        col_map = {}
+        col_map['date'] = self._find_col(df, [r'TAR[İI]H', r'DATE'])
+        col_map['supplier'] = self._find_col(df, [r'F[İI]RMA', r'TEDAR[İI]K', r'CAR[İI]'])
+        col_map['waybill_no'] = self._find_col(df, [r'[İI]RSAL[İI]YE', r'F[İI][ŞS]'])
+        col_map['project_stage'] = self._find_col(df, [r'ETAP', 'BÖLÜM', 'BLOK'])
+        col_map['manufacturer'] = self._find_col(df, [r'ÜRET[İI]C[İI]', 'MARKA'])
+        col_map['notes'] = self._find_col(df, [r'NOT', 'AÇIKLAMA'])
+        
+        if not col_map['date']: return [], ["'Tarih' sütunu bulunamadı."]
+        
+        # Find diameter columns
+        diameter_cols = {}
+        for d in [8, 10, 12, 14, 16, 18, 20, 22, 25, 28, 32]:
+            # Regex to find columns like "Q8", "8 lik", "Ø8"
+            pat = rf"(^|\s|Q|Ø){d}(\s|'|’|l[ıi]k|mm|$)"
+            col = self._find_col(df, [pat])
+            if col: diameter_cols[d] = col
 
         for index, row in df.iterrows():
-            row_num = index + 2 + (header_row_idx if found_header else 0) # Gerçek Excel satır no
+            row_num = index + 2 + (header_idx if header_idx != -1 else 0)
             try:
+                if row.dropna().empty: continue
+                row_str = " ".join([str(v).upper() for v in row.values if pd.notna(v)])
+                if "TOPLAM" in row_str or "GENEL" in row_str: continue
+
                 data = {}
                 
-                # Boş satır kontrolü
-                if row.dropna().empty:
-                    continue
+                # Date
+                data['date'] = self._parse_date(row.get(col_map['date']))
+                if not data['date']: continue
                 
-                # Dolu hücre sayısı kontrolü
-                real_values = []
-                for val in row:
-                    if pd.notna(val):
-                        s_val = str(val).strip()
-                        if s_val and s_val.lower() != 'nan' and s_val.lower() != 'none':
-                            real_values.append(s_val)
+                # Supplier
+                data['supplier'] = str(row.get(col_map['supplier'])).strip().upper() if col_map['supplier'] and pd.notna(row.get(col_map['supplier'])) else "BİLİNMEYEN"
                 
-                non_empty_count = len(real_values)
+                # Other fields
+                data['project_stage'] = str(row.get(col_map['project_stage'])).strip() if col_map['project_stage'] and pd.notna(row.get(col_map['project_stage'])) else None
+                data['manufacturer'] = str(row.get(col_map['manufacturer'])).strip() if col_map['manufacturer'] and pd.notna(row.get(col_map['manufacturer'])) else None
+                data['notes'] = str(row.get(col_map['notes'])).strip() if col_map['notes'] and pd.notna(row.get(col_map['notes'])) else ""
 
-                # Kullanıcı isteği: 4'ten az sütun doluysa satırı yok say
-                if non_empty_count < 4:
-                    continue
-
-                # --- AKILLI TARİH OKUMA (Smart Scan) ---
-                found_date_val = None
-                
-                # 1. Önce belirlenen sütuna bak
-                if pd.notna(row[date_col]): 
-                    found_date_val = row[date_col]
-                
-                # 2. Eğer tarih yoksa satırı tara
-                if not found_date_val:
-                    for val in row:
-                        if pd.isna(val): continue
-                        s_val = str(val).strip()
-                        # Basit tarih regex kontrolü
-                        if re.search(r'(\d{2}[./-]\d{2}[./-]\d{4})|(\d{4}-\d{2}-\d{2})', s_val):
-                            found_date_val = val
-                            break
-                
-                if not found_date_val:
-                    # Tarih bulunamadı ama satırda veri var (yukarıdaki <4 kontrolünü geçti)
-                    raise ValueError("Tarih bulunamadı")
-
-                # Tarih Formatlama
-                try:
-                    if isinstance(found_date_val, datetime):
-                         data['date'] = found_date_val.strftime('%Y-%m-%d')
-                    else:
-                        found_date = False
-                        raw_date_str = str(found_date_val).strip()
-                        for fmt in ['%d.%m.%Y', '%Y-%m-%d', '%d/%m/%Y', '%Y.%m.%d']:
-                            try:
-                                data['date'] = pd.to_datetime(raw_date_str, dayfirst=True).strftime('%Y-%m-%d')
-                                found_date = True
-                                break
-                            except:
-                                continue
-                        if not found_date: raise ValueError("Tarih formatı geçersiz")
-                except:
-                    raise ValueError(f"Tarih formatı hatalı: {found_date_val}")
-
-                # Firma & İrsaliye
-                if supplier_col:
-                    data['supplier'] = str(row[supplier_col]).strip().upper()
-                else:
-                    data['supplier'] = "BİLİNMEYEN TEDARİKÇİ" # Firma sütunu yoksa
-                
-                # İrsaliye boşsa "BELİRTİLMEDİ" yaz veya hata ver (tercihe göre)
-                # Mevcut veritabanı yapısında NOT NULL olduğu için hata vermeli veya doldurmalı
-                if pd.isna(row[waybill_col]) or str(row[waybill_col]).strip() == '':
-                     # Geçici çözüm: Tarih + Firma kombinasyonu yap
-                     data['waybill_no'] = f"AUTO-{data['date'].replace('-','')}"
-                else:
-                    data['waybill_no'] = str(row[waybill_col]).strip()
-                
-                # Etap
-                stage_col = find_col(['ETAP', 'BÖLÜM', 'BLOK'])
-                data['project_stage'] = str(row[stage_col]) if stage_col and pd.notna(row[stage_col]) else None
-                
-                # Notlar
-                note_col = find_col(['NOT', 'AÇIKLAMA', 'ACIKLAMA'])
-                notes = str(row[note_col]) if note_col and pd.notna(row[note_col]) else ""
-
-                # Ağırlıklar
-                total_weight = 0
-                diameters = [8, 10, 12, 14, 16, 18, 20, 22, 25, 28, 32]
-                
-                for d in diameters:
-                    target_cols = find_columns_by_diameter(df.columns, d)
-                    
-                    # 24'lük Özel Durumu
-                    if d == 25:
-                        cols_24 = find_columns_by_diameter(df.columns, 24)
-                        target_cols.extend(cols_24)
-                        if cols_24:
-                            val_24 = sum(float(str(row[c]).replace('.', '').replace(',', '.')) for c in cols_24 if pd.notna(row[c]))
-                            if val_24 > 0:
-                                notes += f" | {val_24:.0f}kg Q24 dahil"
-
-                    val = 0.0
-                    for col_name in target_cols:
-                        if pd.notna(row[col_name]):
-                            try:
-                                raw_val = str(row[col_name])
-                                # Sadece sayısal karakterleri ve virgül/noktayı al
-                                # Temizleme: harfleri at
-                                clean_str = re.sub(r'[^\d.,]', '', raw_val)
-                                if not clean_str: continue
-                                
-                                # 1.250,50 -> 1250.50 dönüşümü
-                                if ',' in clean_str and '.' in clean_str:
-                                    if clean_str.find('.') < clean_str.find(','):
-                                         # 1.250,50 (TR format)
-                                         clean_str = clean_str.replace('.', '').replace(',', '.')
-                                    else:
-                                         # 1,250.50 (US format)
-                                         clean_str = clean_str.replace(',', '')
-                                elif ',' in clean_str:
-                                    clean_str = clean_str.replace(',', '.')
-                                
-                                val += float(clean_str)
-                            except:
-                                pass
-                    
+                # Weights
+                total_weight = 0.0
+                for d, col in diameter_cols.items():
+                    val = self._parse_float(row.get(col))
                     data[f'q{d}_kg'] = val
                     total_weight += val
+                
+                # Special case for Q24 mapped to Q25
+                col_24 = self._find_col(df, [r"(^|\s|Q|Ø)24(\s|'|’|l[ıi]k|mm|$)"])
+                if col_24:
+                    val_24 = self._parse_float(row.get(col_24))
+                    if val_24 > 0:
+                        data['q25_kg'] = data.get('q25_kg', 0) + val_24
+                        total_weight += val_24
+                        data['notes'] += f" | {val_24:.0f}kg Q24 (Q25'e eklendi)"
 
-                if total_weight < 1:
-                    if "TOPLAM" in str(data['supplier']): continue
-                    # Eğer satırda veri yoksa ama tarih varsa, belki hatalı giriş değil boş satırdır
-                    # Yine de kayıt oluşturmayalım
-                    continue
+                if total_weight <= 0: continue # Skip if no weight
                 
                 data['total_weight_kg'] = total_weight
-                data['notes'] = notes.strip()
-                if data['notes'].startswith('|'): data['notes'] = data['notes'][1:].strip()
+                data['notes'] = data['notes'].strip(" |")
+
+                # Waybill
+                if col_map['waybill_no'] and pd.notna(row.get(col_map['waybill_no'])):
+                    wb = str(row.get(col_map['waybill_no'])).strip().upper()
+                    if wb:
+                        data['waybill_no'] = wb
+                    else:
+                        unique_str = f"{data['date']}_{data['supplier']}_{total_weight:.2f}_{data['project_stage'] or ''}"
+                        data['waybill_no'] = f"AUTO-{hashlib.md5(unique_str.encode()).hexdigest()[:8]}"
+                else:
+                    unique_str = f"{data['date']}_{data['supplier']}_{total_weight:.2f}_{data['project_stage'] or ''}"
+                    data['waybill_no'] = f"AUTO-{hashlib.md5(unique_str.encode()).hexdigest()[:8]}"
 
                 cleaned_data.append(data)
-
             except Exception as e:
-                if "TOPLAM" in str(row.values): continue
                 errors.append(f"Satır {row_num}: {str(e)}")
-
+                
         return cleaned_data, errors
 
     def validate_mesh(self, df):
         cleaned_data = []
         errors = []
         
-        missing_cols = [col for col in ['Tarih', 'Firma', 'İrsaliye No', 'Hasır Tipi', 'Adet', 'Ağırlık'] if col not in df.columns]
-        if missing_cols:
-            return [], [f"Eksik Sütunlar: {', '.join(missing_cols)}"]
-
-        valid_types = ['Q', 'R', 'TR'] # Basitleştirilmiş kontrol, DB enum'a göre
-        # Not: DB'de enum Q, R, TR olarak tanımlı ama uygulamada Q131, Q188 vb kullanılıyor.
-        # Burada sadece prefix kontrolü yapabiliriz veya uygulamadaki gibi serbest bırakıp DB enum'una uygun hale getirebiliriz.
-        # Schema: mesh_type_enum ('Q', 'R', 'TR') -> Bu enum biraz dar, uygulamada Q131 vb var. 
-        # DB şemasına tekrar baktığımda: CREATE TYPE mesh_type_enum AS ENUM ('Q', 'R', 'TR');
-        # Ancak uygulama kodunda "Q131" gibi değerler var. Muhtemelen DB'ye yazarken sadece ilk harfi veya Q/R tipini almalı.
-        # Veya DB enum'ı güncellenmeli. Şimdilik güvenli olması için sadece Q, R veya TR olarak map edelim.
+        keywords = ['TARİH', 'FİRMA', 'HASIR', 'TİP', 'MİKTAR', 'AĞIRLIK']
+        header_idx = self._find_header_row(df, keywords)
+        if header_idx == -1:
+            pass
+        else:
+            if header_idx is None: header_idx = 0
+                
+            df = df.iloc[header_idx:].reset_index(drop=True)
+            df.columns = df.iloc[0]
+            df = df.iloc[1:].reset_index(drop=True)
+        self._clean_column_names(df)
         
+        col_map = {}
+        col_map['date'] = self._find_col(df, [r'TAR[İI]H', r'DATE'])
+        col_map['supplier'] = self._find_col(df, [r'F[İI]RMA', r'TEDAR[İI]K'])
+        col_map['waybill_no'] = self._find_col(df, [r'[İI]RSAL[İI]YE', r'F[İI][ŞS]'])
+        col_map['mesh_type'] = self._find_col(df, [r'HASIR', 'T[İI]P', 'C[İI]NS'])
+        col_map['piece_count'] = self._find_col(df, [r'ADET', 'M[İI]KTAR'])
+        col_map['weight_kg'] = self._find_col(df, [r'AĞIRLIK', 'KG'])
+        col_map['dimensions'] = self._find_col(df, [r'EBAT'])
+        col_map['usage_location'] = self._find_col(df, [r'KULLANIM', 'YER'])
+        col_map['notes'] = self._find_col(df, [r'NOT', 'AÇIKLAMA'])
+        
+        if not col_map['date']: return [], ["'Tarih' sütunu bulunamadı."]
+
         for index, row in df.iterrows():
-            row_num = index + 2
+            row_num = index + 2 + header_idx
             try:
+                if row.dropna().empty: continue
+                row_str = " ".join([str(v).upper() for v in row.values if pd.notna(v)])
+                if "TOPLAM" in row_str or "GENEL" in row_str: continue
+
                 data = {}
+                data['date'] = self._parse_date(row.get(col_map['date']))
+                if not data['date']: continue
                 
-                try:
-                    data['date'] = pd.to_datetime(row['Tarih']).strftime('%Y-%m-%d')
-                except:
-                    raise ValueError("Tarih formatı hatalı")
-
-                data['supplier'] = str(row['Firma']).strip().upper()
-                data['waybill_no'] = str(row['İrsaliye No']).strip()
+                data['supplier'] = str(row.get(col_map['supplier'])).strip().upper() if col_map['supplier'] and pd.notna(row.get(col_map['supplier'])) else "BİLİNMEYEN"
                 
-                # Mesh Type Mapping
-                raw_type = str(row['Hasır Tipi']).strip().upper()
-                if raw_type.startswith('Q'): data['mesh_type'] = 'Q'
-                elif raw_type.startswith('R'): data['mesh_type'] = 'R'
-                elif raw_type.startswith('T'): data['mesh_type'] = 'TR'
+                # Mesh Type
+                if col_map['mesh_type'] and pd.notna(row.get(col_map['mesh_type'])):
+                    raw_type = str(row.get(col_map['mesh_type'])).strip().upper()
+                    if raw_type.startswith('Q'): data['mesh_type'] = 'Q'
+                    elif raw_type.startswith('R'): data['mesh_type'] = 'R'
+                    elif raw_type.startswith('T'): data['mesh_type'] = 'TR'
+                    else: data['mesh_type'] = 'Q' # Default
+                    
+                    # Store original type in notes if specific
+                    if raw_type not in ['Q', 'R', 'TR']:
+                        extra_note = f"Tip: {raw_type}"
                 else:
-                    # Default or Error? Let's try to handle broadly or fail
-                    # DB constraint might fail if not mapped.
-                    # Let's assume Q for unknown for now or raise error
-                    raise ValueError(f"Bilinmeyen Hasır Tipi: {raw_type} (Q, R veya TR ile başlamalı)")
+                    data['mesh_type'] = 'Q'
+                    extra_note = ""
 
-                # Store full type info in notes if needed or dimensions
-                # But schema has specific columns. 
-                # Let's stick to schema: mesh_type (ENUM), dimensions (TEXT)
+                # Counts
+                data['piece_count'] = int(self._parse_float(row.get(col_map['piece_count'])))
+                data['weight_kg'] = self._parse_float(row.get(col_map['weight_kg']))
                 
-                data['dimensions'] = str(row['Ebatlar']) if pd.notna(row['Ebatlar']) else None
+                if data['weight_kg'] <= 0 and data['piece_count'] <= 0: continue
                 
-                try:
-                    data['piece_count'] = int(row['Adet'])
-                    data['weight_kg'] = float(str(row['Ağırlık']).replace(',', '.'))
-                except:
-                    raise ValueError("Adet veya Ağırlık sayısal olmalı")
+                data['dimensions'] = str(row.get(col_map['dimensions'])).strip() if col_map['dimensions'] and pd.notna(row.get(col_map['dimensions'])) else None
+                data['usage_location'] = str(row.get(col_map['usage_location'])).strip() if col_map['usage_location'] and pd.notna(row.get(col_map['usage_location'])) else None
+                
+                notes = str(row.get(col_map['notes'])).strip() if col_map['notes'] and pd.notna(row.get(col_map['notes'])) else ""
+                if extra_note: notes = f"{notes} | {extra_note}".strip(" |")
+                data['notes'] = notes
 
-                data['usage_location'] = str(row['Kullanım Yeri']) if pd.notna(row['Kullanım Yeri']) else None
-                data['notes'] = str(row.get('Notlar', '')) if pd.notna(row.get('Notlar')) else None
-                
-                # Append original type info to notes if specific type like Q131 is used
-                if raw_type not in ['Q', 'R', 'TR']:
-                    if data['notes']: data['notes'] += f" - Tip: {raw_type}"
-                    else: data['notes'] = f"Tip: {raw_type}"
+                # Waybill
+                if col_map['waybill_no'] and pd.notna(row.get(col_map['waybill_no'])):
+                    wb = str(row.get(col_map['waybill_no'])).strip().upper()
+                    if wb:
+                        data['waybill_no'] = wb
+                    else:
+                        unique_str = f"{data['date']}_{data['supplier']}_{data['mesh_type']}_{data['weight_kg']:.2f}"
+                        data['waybill_no'] = f"AUTO-{hashlib.md5(unique_str.encode()).hexdigest()[:8]}"
+                else:
+                    unique_str = f"{data['date']}_{data['supplier']}_{data['mesh_type']}_{data['weight_kg']:.2f}"
+                    data['waybill_no'] = f"AUTO-{hashlib.md5(unique_str.encode()).hexdigest()[:8]}"
 
                 cleaned_data.append(data)
-
             except Exception as e:
                 errors.append(f"Satır {row_num}: {str(e)}")
-
+                
         return cleaned_data, errors
-

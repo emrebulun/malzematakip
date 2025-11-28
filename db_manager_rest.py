@@ -58,20 +58,80 @@ class SupabaseManagerREST_v2:
             return False
     
     def bulk_insert_concrete(self, data_list: List[Dict], batch_size: int = 500) -> Dict:
-        """Bulk insert concrete records in batches"""
+        """Bulk insert concrete records in batches with duplicate check"""
         try:
+            if not data_list:
+                return {'success': True, 'total_inserted': 0, 'failed': 0, 'skipped': 0, 'total_records': 0}
+
+            # 1. Prepare data and find date range
+            dates = []
+            for item in data_list:
+                if isinstance(item.get('date'), (date, pd.Timestamp)):
+                    item['date'] = item['date'].isoformat() if hasattr(item['date'], 'isoformat') else str(item['date'])
+                dates.append(item['date'])
+            
+            if not dates:
+                return {'success': False, 'error': "No dates found in data"}
+
+            min_date = min(dates)
+            max_date = max(dates)
+
+            # 2. Fetch existing records in this range to check for duplicates
+            existing_logs = self.get_concrete_logs(start_date=min_date, end_date=max_date)
+            
+            existing_keys = set()
+            if not existing_logs.empty:
+                for _, row in existing_logs.iterrows():
+                    # Normalize date to string YYYY-MM-DD
+                    d_val = row['date']
+                    if isinstance(d_val, pd.Timestamp):
+                        d_str = d_val.strftime('%Y-%m-%d')
+                    else:
+                        d_str = str(d_val).split('T')[0]
+                    
+                    # Normalize supplier and waybill
+                    supp = str(row['supplier']).strip().upper()
+                    wayb = str(row['waybill_no']).strip().upper()
+                    
+                    key = (d_str, supp, wayb)
+                    existing_keys.add(key)
+
+            # 3. Filter duplicates
+            new_data = []
+            skipped = 0
+            
+            for item in data_list:
+                # Normalize item date
+                i_date = item['date']
+                if 'T' in i_date: i_date = i_date.split('T')[0]
+                
+                i_supp = str(item['supplier']).strip().upper()
+                i_wayb = str(item['waybill_no']).strip().upper()
+                
+                key = (i_date, i_supp, i_wayb)
+                
+                if key in existing_keys:
+                    skipped += 1
+                else:
+                    new_data.append(item)
+                    existing_keys.add(key) # Prevent duplicates within the batch
+
+            if not new_data:
+                return {
+                    'success': True,
+                    'total_inserted': 0,
+                    'failed': 0,
+                    'skipped': skipped,
+                    'total_records': len(data_list),
+                    'message': "All records were duplicates."
+                }
+
+            # 4. Insert new data in batches
             total_inserted = 0
             failed = 0
             
-            # Process in batches to avoid API limits
-            for i in range(0, len(data_list), batch_size):
-                batch = data_list[i:i + batch_size]
-                
-                # Convert dates to strings
-                for item in batch:
-                    if isinstance(item.get('date'), (date, pd.Timestamp)):
-                        item['date'] = item['date'].isoformat() if hasattr(item['date'], 'isoformat') else str(item['date'])
-                
+            for i in range(0, len(new_data), batch_size):
+                batch = new_data[i:i + batch_size]
                 try:
                     response = self.client.table('concrete_logs').insert(batch).execute()
                     if response.data:
@@ -84,6 +144,7 @@ class SupabaseManagerREST_v2:
                 'success': True,
                 'total_inserted': total_inserted,
                 'failed': failed,
+                'skipped': skipped,
                 'total_records': len(data_list)
             }
             
@@ -241,284 +302,85 @@ class SupabaseManagerREST_v2:
             st.error(f"❌ Failed to group by location: {e}")
             return pd.DataFrame()
 
-    def delete_all_concrete_logs(self) -> bool:
-        """Delete ALL concrete logs (Use with caution!)"""
+    def delete_concrete_logs(self, start_date: Optional[str] = None, end_date: Optional[str] = None, supplier: Optional[str] = None) -> Dict:
+        """Delete concrete logs with filters"""
         try:
-            # Supabase doesn't support truncate via REST easily without RLS policies allowing it.
-            # We will delete where id > 0 (assuming id is int) or some other condition.
-            # Or better, delete all records.
-            response = self.client.table('concrete_logs').delete().neq('id', 0).execute()
-            return True
-        except Exception as e:
-            st.error(f"❌ Failed to delete concrete logs: {e}")
-            return False
-    
-    # ============================================
-    # REBAR OPERATIONS
-    # ============================================
-    
-    def add_rebar(self, data: Dict) -> bool:
-        """Add a new rebar delivery record"""
-        try:
-            if isinstance(data.get('date'), date):
-                data['date'] = data['date'].isoformat()
+            query = self.client.table('concrete_logs').delete()
             
-            # Set defaults for diameter fields
-            for diameter in [8, 10, 12, 14, 16, 18, 20, 22, 25, 28, 32]:
-                data.setdefault(f'q{diameter}_kg', 0.0)
-            
-            response = self.client.table('rebar_logs').insert(data).execute()
-            
-            if response.data:
-                st.success("✅ Rebar record added!")
-                return True
-            return False
-            
-        except Exception as e:
-            st.error(f"❌ Failed to add rebar: {e}")
-            return False
-
-    def bulk_insert_rebar(self, data_list: List[Dict], batch_size: int = 500) -> Dict:
-        """Bulk insert rebar records in batches"""
-        try:
-            total_inserted = 0
-            failed = 0
-            
-            # Process in batches
-            for i in range(0, len(data_list), batch_size):
-                batch = data_list[i:i + batch_size]
+            filters_applied = False
+            if start_date:
+                query = query.gte('date', start_date)
+                filters_applied = True
+            if end_date:
+                query = query.lte('date', end_date)
+                filters_applied = True
+            if supplier:
+                query = query.eq('supplier', supplier)
+                filters_applied = True
                 
-                # Prepare batch data
-                for item in batch:
-                    if isinstance(item.get('date'), (date, pd.Timestamp)):
-                        item['date'] = item['date'].isoformat() if hasattr(item['date'], 'isoformat') else str(item['date'])
-                    
-                    # Set defaults
-                    for diameter in [8, 10, 12, 14, 16, 18, 20, 22, 25, 28, 32]:
-                        item.setdefault(f'q{diameter}_kg', 0.0)
+            # If no filters, delete all (using neq id trick)
+            if not filters_applied:
+                query = query.neq('id', '00000000-0000-0000-0000-000000000000')
                 
-                try:
-                    response = self.client.table('rebar_logs').insert(batch).execute()
-                    if response.data:
-                        total_inserted += len(response.data)
-                except Exception as batch_error:
-                    st.warning(f"⚠️ Batch {i//batch_size + 1} failed: {batch_error}")
-                    failed += len(batch)
-            
-            return {
-                'success': True,
-                'total_inserted': total_inserted,
-                'failed': failed,
-                'total_records': len(data_list)
-            }
+            response = query.execute()
+            return {'success': True, 'count': len(response.data) if response.data else 0}
             
         except Exception as e:
-            st.error(f"❌ Bulk insert failed: {e}")
+            st.error(f"❌ Silme işlemi başarısız: {e}")
             return {'success': False, 'error': str(e)}
-    
-    def get_rebar_logs(self,
-                       start_date: Optional[str] = None,
-                       end_date: Optional[str] = None) -> pd.DataFrame:
-        """Get rebar delivery logs - ALL RECORDS using pagination"""
-        try:
-            all_data = []
-            page_size = 1000
-            page = 0
-            
-            while True:
-                query = self.client.table('rebar_logs').select("*")
-                
-                if start_date:
-                    query = query.gte('date', start_date)
-                
-                if end_date:
-                    query = query.lte('date', end_date)
-                
-                response = query.order('date', desc=True).range(page * page_size, (page + 1) * page_size - 1).execute()
-                
-                if response.data:
-                    all_data.extend(response.data)
-                    if len(response.data) < page_size:
-                        break
-                    page += 1
-                else:
-                    break
-            
-            if all_data:
-                df = pd.DataFrame(all_data)
-                df['date'] = pd.to_datetime(df['date'])
-                return df
-            else:
-                return pd.DataFrame()
-                
-        except Exception as e:
-            st.error(f"❌ Failed to get rebar logs: {e}")
-            return pd.DataFrame()
-    
-    def get_rebar_summary(self) -> Dict:
-        """Get rebar summary statistics - ALL RECORDS"""
-        try:
-            all_data = []
-            page_size = 1000
-            page = 0
-            
-            while True:
-                response = self.client.table('rebar_logs').select("*").range(page * page_size, (page + 1) * page_size - 1).execute()
-                
-                if response.data:
-                    all_data.extend(response.data)
-                    if len(response.data) < page_size:
-                        break
-                    page += 1
-                else:
-                    break
-            
-            if all_data:
-                df = pd.DataFrame(all_data)
-                summary = {
-                    'total_deliveries': len(df),
-                    'total_weight_kg': df['total_weight_kg'].sum()
-                }
-                
-                # Add per-diameter totals
-                for diameter in [8, 10, 12, 14, 16, 18, 20, 22, 25, 28, 32]:
-                    col = f'q{diameter}_kg'
-                    if col in df.columns:
-                        summary[f'total_{col}'] = df[col].sum()
-                
-                return summary
-            return {}
-            
-        except Exception as e:
-            st.error(f"❌ Failed to get rebar summary: {e}")
-            return {}
-    
-    # ============================================
-    # MESH OPERATIONS
-    # ============================================
-    
-    def add_mesh(self, data: Dict) -> bool:
-        """Add a new mesh delivery record"""
-        try:
-            if isinstance(data.get('date'), date):
-                data['date'] = data['date'].isoformat()
-            
-            response = self.client.table('mesh_logs').insert(data).execute()
-            
-            if response.data:
-                st.success("✅ Mesh record added!")
-                return True
-            return False
-            
-        except Exception as e:
-            st.error(f"❌ Failed to add mesh: {e}")
-            return False
 
-    def bulk_insert_mesh(self, data_list: List[Dict], batch_size: int = 500) -> Dict:
-        """Bulk insert mesh records in batches"""
+    def delete_rebar_logs(self, start_date: Optional[str] = None, end_date: Optional[str] = None, supplier: Optional[str] = None) -> Dict:
+        """Delete rebar logs with filters"""
         try:
-            total_inserted = 0
-            failed = 0
+            query = self.client.table('rebar_logs').delete()
             
-            # Process in batches
-            for i in range(0, len(data_list), batch_size):
-                batch = data_list[i:i + batch_size]
+            filters_applied = False
+            if start_date:
+                query = query.gte('date', start_date)
+                filters_applied = True
+            if end_date:
+                query = query.lte('date', end_date)
+                filters_applied = True
+            if supplier:
+                query = query.eq('supplier', supplier)
+                filters_applied = True
                 
-                # Prepare batch data
-                for item in batch:
-                    if isinstance(item.get('date'), (date, pd.Timestamp)):
-                        item['date'] = item['date'].isoformat() if hasattr(item['date'], 'isoformat') else str(item['date'])
+            if not filters_applied:
+                query = query.neq('id', '00000000-0000-0000-0000-000000000000')
                 
-                try:
-                    response = self.client.table('mesh_logs').insert(batch).execute()
-                    if response.data:
-                        total_inserted += len(response.data)
-                except Exception as batch_error:
-                    st.warning(f"⚠️ Batch {i//batch_size + 1} failed: {batch_error}")
-                    failed += len(batch)
-            
-            return {
-                'success': True,
-                'total_inserted': total_inserted,
-                'failed': failed,
-                'total_records': len(data_list)
-            }
+            response = query.execute()
+            return {'success': True, 'count': len(response.data) if response.data else 0}
             
         except Exception as e:
-            st.error(f"❌ Bulk insert failed: {e}")
+            st.error(f"❌ Silme işlemi başarısız: {e}")
             return {'success': False, 'error': str(e)}
-    
-    def get_mesh_logs(self,
-                      start_date: Optional[str] = None,
-                      end_date: Optional[str] = None) -> pd.DataFrame:
-        """Get mesh delivery logs - ALL RECORDS using pagination"""
+
+    def delete_mesh_logs(self, start_date: Optional[str] = None, end_date: Optional[str] = None, supplier: Optional[str] = None) -> Dict:
+        """Delete mesh logs with filters"""
         try:
-            all_data = []
-            page_size = 1000
-            page = 0
+            query = self.client.table('mesh_logs').delete()
             
-            while True:
-                query = self.client.table('mesh_logs').select("*")
+            filters_applied = False
+            if start_date:
+                query = query.gte('date', start_date)
+                filters_applied = True
+            if end_date:
+                query = query.lte('date', end_date)
+                filters_applied = True
+            if supplier:
+                query = query.eq('supplier', supplier)
+                filters_applied = True
                 
-                if start_date:
-                    query = query.gte('date', start_date)
+            if not filters_applied:
+                query = query.neq('id', '00000000-0000-0000-0000-000000000000')
                 
-                if end_date:
-                    query = query.lte('date', end_date)
-                
-                response = query.order('date', desc=True).range(page * page_size, (page + 1) * page_size - 1).execute()
-                
-                if response.data:
-                    all_data.extend(response.data)
-                    if len(response.data) < page_size:
-                        break
-                    page += 1
-                else:
-                    break
-            
-            if all_data:
-                df = pd.DataFrame(all_data)
-                df['date'] = pd.to_datetime(df['date'])
-                return df
-            else:
-                return pd.DataFrame()
-                
-        except Exception as e:
-            st.error(f"❌ Failed to get mesh logs: {e}")
-            return pd.DataFrame()
-    
-    def get_mesh_summary(self) -> Dict:
-        """Get mesh summary statistics - ALL RECORDS"""
-        try:
-            all_data = []
-            page_size = 1000
-            page = 0
-            
-            while True:
-                response = self.client.table('mesh_logs').select("*").range(page * page_size, (page + 1) * page_size - 1).execute()
-                
-                if response.data:
-                    all_data.extend(response.data)
-                    if len(response.data) < page_size:
-                        break
-                    page += 1
-                else:
-                    break
-            
-            if all_data:
-                df = pd.DataFrame(all_data)
-                return {
-                    'total_deliveries': len(df),
-                    'total_pieces': df['piece_count'].sum(),
-                    'total_weight_kg': df['weight_kg'].sum(),
-                    'type_count': df['mesh_type'].nunique()
-                }
-            return {}
+            response = query.execute()
+            return {'success': True, 'count': len(response.data) if response.data else 0}
             
         except Exception as e:
-            st.error(f"❌ Failed to get mesh summary: {e}")
-            return {}
-    
+            st.error(f"❌ Silme işlemi başarısız: {e}")
+            return {'success': False, 'error': str(e)}
+
     # ============================================
     # UTILITY FUNCTIONS
     # ============================================
@@ -561,8 +423,9 @@ class SupabaseManagerREST_v2:
 # ============================================
 
 @st.cache_resource
-def get_db_manager_rest() -> SupabaseManagerREST_v2:
-    """Get or create cached database manager instance (REST API)"""
+def get_db_manager_rest_v4() -> SupabaseManagerREST_v2:
+    """Get or create cached database manager instance (REST API) - V4"""
+    print("Initializing SupabaseManagerREST_v2 (V4)...")
     return SupabaseManagerREST_v2()
 
 
