@@ -948,14 +948,16 @@ elif page == "📂 Toplu Excel Yükleme":
                 supplier_filter = st.selectbox("Tedarikçi Seçin", suppliers, key="del_supp")
             else:
                 st.error("DİKKAT: Seçilen veri tipindeki TÜM kayıtlar silinecektir!")
+        
+        confirm_delete = True
+        if del_mode == "TÜMÜNÜ SİL":
+            confirm_delete = st.checkbox("Evet, tüm verileri silmek istediğimden eminim.", key="confirm_del_all")
 
         if st.button("🗑️ Seçilenleri Sil", type="primary", use_container_width=True):
             # Confirmation check
-            if del_mode == "TÜMÜNÜ SİL":
-                confirm = st.checkbox("Evet, tüm verileri silmek istediğimden eminim.")
-                if not confirm:
-                    st.warning("Lütfen silme işlemini onaylayın.")
-                    st.stop()
+            if del_mode == "TÜMÜNÜ SİL" and not confirm_delete:
+                st.warning("Lütfen silme işlemini onaylamak için yukarıdaki kutucuğu işaretleyin.")
+                st.stop()
             
             result = {}
             s_date_str = start_date.isoformat() if start_date else None
