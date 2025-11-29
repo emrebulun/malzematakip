@@ -7,7 +7,7 @@ import streamlit as st
 import pandas as pd
 import io
 from datetime import datetime, date
-from db_manager_rest import get_db_manager_rest_v9
+from db_manager_rest import get_db_manager_rest_v10
 from excel_uploader import ExcelValidator
 import plotly.express as px
 import plotly.graph_objects as go
@@ -42,7 +42,7 @@ st.markdown("""
 
 @st.cache_resource
 def init_db_v4():
-    return get_db_manager_rest_v9()
+    return get_db_manager_rest_v10()
 
 # Cache data functions for performance
 @st.cache_data(ttl=600)  # Cache for 10 minutes
@@ -1079,11 +1079,26 @@ elif page == "📂 Toplu Excel Yükleme":
                 st.markdown("#### İlk 5 Kayıt:")
                 st.dataframe(df_preview.head(), use_container_width=True)
                 
-                # Duplicate Check for Rebar and Mesh
+                # Duplicate Check for Rebar, Mesh and Concrete
                 final_data = clean_data
                 skip_existing = True
                 
-                if import_type == "⚙️ Demir":
+                if import_type == "🧱 Beton":
+                    new_recs, dup_recs = db.check_concrete_duplicates(clean_data)
+                    if dup_recs:
+                        st.warning(f"⚠️ {len(dup_recs)} adet mükerrer olabilecek kayıt tespit edildi (Tarih, Firma, İrsaliye ve Miktar aynı).")
+                        with st.expander("Mükerrer Kayıtları İncele"):
+                            st.dataframe(pd.DataFrame(dup_recs))
+                        
+                        if st.checkbox("Mükerrer görünen bu kayıtları da ekle (Onaylıyorum)", value=False, key="dup_concrete"):
+                            final_data = clean_data # Insert all
+                            skip_existing = False # Force insert
+                            st.info("✅ Mükerrer kayıtlar da eklenecek.")
+                        else:
+                            final_data = new_recs # Only new
+                            st.info(f"ℹ️ Sadece {len(new_recs)} yeni kayıt eklenecek.")
+
+                elif import_type == "⚙️ Demir":
                     new_recs, dup_recs = db.check_rebar_duplicates(clean_data)
                     if dup_recs:
                         st.warning(f"⚠️ {len(dup_recs)} adet mükerrer olabilecek kayıt tespit edildi (Tarih, Firma ve Miktar aynı).")
@@ -1123,7 +1138,7 @@ elif page == "📂 Toplu Excel Yükleme":
                             
                             if import_type == "🧱 Beton":
                                 status.write("Beton verileri toplu yükleniyor...")
-                                result = db.bulk_insert_concrete(final_data)
+                                result = db.bulk_insert_concrete(final_data, skip_existing=skip_existing)
                             elif import_type == "⚙️ Demir":
                                 status.write("Demir verileri toplu yükleniyor...")
                                 # Use skip_existing param

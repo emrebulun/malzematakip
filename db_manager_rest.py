@@ -56,72 +56,124 @@ class SupabaseManagerREST_v2:
         except Exception as e:
             st.error(f"❌ Failed to add concrete: {e}")
             return False
-    
-    def bulk_insert_concrete(self, data_list: List[Dict], batch_size: int = 500) -> Dict:
-        """Bulk insert concrete records in batches with duplicate check"""
+
+    def check_concrete_duplicates(self, data_list: List[Dict]) -> Tuple[List[Dict], List[Dict]]:
+        """Check for duplicates in the database based on content."""
+        try:
+            if not data_list:
+                return [], []
+
+            dates = [item['date'] for item in data_list]
+            min_date = min(dates)
+            max_date = max(dates)
+
+            # Fetch existing logs
+            existing_logs = self.get_concrete_logs(start_date=min_date, end_date=max_date)
+            
+            existing_signatures = set()
+            if not existing_logs.empty:
+                for _, row in existing_logs.iterrows():
+                    d_val = row['date']
+                    d_str = d_val.strftime('%Y-%m-%d') if isinstance(d_val, pd.Timestamp) else str(d_val).split('T')[0]
+                    supp = str(row['supplier']).strip().upper()
+                    wayb = str(row['waybill_no']).strip().upper()
+                    qty = float(row.get('quantity_m3', 0))
+                    
+                    sig = (d_str, supp, wayb, f"{qty:.2f}")
+                    existing_signatures.add(sig)
+
+            new_records = []
+            potential_duplicates = []
+
+            for item in data_list:
+                i_date = item['date']
+                if 'T' in i_date: i_date = i_date.split('T')[0]
+                i_supp = str(item['supplier']).strip().upper()
+                i_wayb = str(item['waybill_no']).strip().upper()
+                i_qty = float(item.get('quantity_m3', 0))
+
+                sig = (i_date, i_supp, i_wayb, f"{i_qty:.2f}")
+
+                if sig in existing_signatures:
+                    potential_duplicates.append(item)
+                else:
+                    new_records.append(item)
+
+            return new_records, potential_duplicates
+
+        except Exception as e:
+            st.error(f"❌ Concrete duplicate check failed: {e}")
+            return data_list, []
+
+    def bulk_insert_concrete(self, data_list: List[Dict], batch_size: int = 500, skip_existing: bool = True) -> Dict:
+        """Bulk insert concrete records in batches"""
         try:
             if not data_list:
                 return {'success': True, 'total_inserted': 0, 'failed': 0, 'skipped': 0, 'total_records': 0}
 
-            # 1. Prepare data and find date range
-            dates = []
-            for item in data_list:
-                if isinstance(item.get('date'), (date, pd.Timestamp)):
-                    item['date'] = item['date'].isoformat() if hasattr(item['date'], 'isoformat') else str(item['date'])
-                dates.append(item['date'])
-            
-            if not dates:
-                return {'success': False, 'error': "No dates found in data"}
-
-            min_date = min(dates)
-            max_date = max(dates)
-
-            # 2. Fetch existing records in this range to check for duplicates
-            existing_logs = self.get_concrete_logs(start_date=min_date, end_date=max_date)
-            
-            existing_keys = set()
-            if not existing_logs.empty:
-                for _, row in existing_logs.iterrows():
-                    # Normalize date to string YYYY-MM-DD
-                    d_val = row['date']
-                    if isinstance(d_val, pd.Timestamp):
-                        d_str = d_val.strftime('%Y-%m-%d')
-                    else:
-                        d_str = str(d_val).split('T')[0]
-                    
-                    # Normalize supplier and waybill
-                    supp = str(row['supplier']).strip().upper()
-                    wayb = str(row['waybill_no']).strip().upper()
-                    
-                    key = (d_str, supp, wayb)
-                    existing_keys.add(key)
-
-            # 3. Filter duplicates
-            new_data = []
+            data_to_insert = []
             skipped = 0
-            
-            for item in data_list:
-                # Normalize item date
-                i_date = item['date']
-                if 'T' in i_date: i_date = i_date.split('T')[0]
-                
-                i_supp = str(item['supplier']).strip().upper()
-                i_wayb = str(item['waybill_no']).strip().upper()
-                
-                key = (i_date, i_supp, i_wayb)
-                
-                if key in existing_keys:
-                    skipped += 1
-                else:
-                    new_data.append(item)
-                    existing_keys.add(key) # Prevent duplicates within the batch
+            skipped_rows = []
 
-            if not new_data:
+            if skip_existing:
+                dates = []
+                for item in data_list:
+                    if isinstance(item.get('date'), (date, pd.Timestamp)):
+                        item['date'] = item['date'].isoformat() if hasattr(item['date'], 'isoformat') else str(item['date'])
+                    dates.append(item['date'])
+                
+                if not dates:
+                    return {'success': False, 'error': "No dates found in data"}
+
+                min_date = min(dates)
+                max_date = max(dates)
+
+                # 2. Get existing records for this date range
+                existing_logs = self.get_concrete_logs(start_date=min_date, end_date=max_date)
+                
+                existing_keys = set()
+                if not existing_logs.empty:
+                    for _, row in existing_logs.iterrows():
+                        d_val = row['date']
+                        d_str = d_val.strftime('%Y-%m-%d') if isinstance(d_val, pd.Timestamp) else str(d_val).split('T')[0]
+                        supp = str(row['supplier']).strip().upper()
+                        wayb = str(row['waybill_no']).strip().upper()
+                        qty = float(row.get('quantity_m3', 0))
+                        existing_keys.add((d_str, supp, wayb, f"{qty:.2f}"))
+
+                # 3. Filter duplicates
+                for item in data_list:
+                    i_date = item['date']
+                    if 'T' in i_date: i_date = i_date.split('T')[0]
+                    i_supp = str(item['supplier']).strip().upper()
+                    i_wayb = str(item['waybill_no']).strip().upper()
+                    i_qty = float(item.get('quantity_m3', 0))
+                    
+                    key = (i_date, i_supp, i_wayb, f"{i_qty:.2f}")
+                    
+                    if key in existing_keys:
+                        skipped += 1
+                        if 'row_num' in item:
+                            skipped_rows.append(item['row_num'])
+                    else:
+                        item_to_insert = item.copy()
+                        if 'row_num' in item_to_insert: del item_to_insert['row_num']
+                        data_to_insert.append(item_to_insert)
+                        existing_keys.add(key)
+            else:
+                 # Prepare all data for insertion
+                for item in data_list:
+                    item_to_insert = item.copy()
+                    if 'row_num' in item_to_insert: del item_to_insert['row_num']
+                    data_to_insert.append(item_to_insert)
+
+            if not data_to_insert:
                 return {
                     'success': True,
                     'total_inserted': 0,
                     'failed': 0,
                     'skipped': skipped,
+                    'skipped_rows': skipped_rows,
                     'total_records': len(data_list),
                     'message': "All records were duplicates."
                 }
@@ -130,8 +182,8 @@ class SupabaseManagerREST_v2:
             total_inserted = 0
             failed = 0
             
-            for i in range(0, len(new_data), batch_size):
-                batch = new_data[i:i + batch_size]
+            for i in range(0, len(data_to_insert), batch_size):
+                batch = data_to_insert[i:i + batch_size]
                 try:
                     response = self.client.table('concrete_logs').insert(batch).execute()
                     if response.data:
@@ -145,11 +197,12 @@ class SupabaseManagerREST_v2:
                 'total_inserted': total_inserted,
                 'failed': failed,
                 'skipped': skipped,
+                'skipped_rows': skipped_rows,
                 'total_records': len(data_list)
             }
             
         except Exception as e:
-            st.error(f"❌ Bulk insert failed: {e}")
+            st.error(f"❌ Bulk insert concrete failed: {e}")
             return {'success': False, 'error': str(e)}
     
     def get_concrete_logs(self, 
@@ -849,9 +902,9 @@ class SupabaseManagerREST_v2:
 # ============================================
 
 @st.cache_resource
-def get_db_manager_rest_v9() -> SupabaseManagerREST_v2:
-    """Get or create cached database manager instance (REST API) - V9"""
-    print("Initializing SupabaseManagerREST_v2 (V9)...")
+def get_db_manager_rest_v10() -> SupabaseManagerREST_v2:
+    """Get or create cached database manager instance (REST API) - V10"""
+    print("Initializing SupabaseManagerREST_v2 (V10)...")
     return SupabaseManagerREST_v2()
 
 
