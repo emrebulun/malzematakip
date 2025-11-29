@@ -115,6 +115,71 @@ class ExcelValidator:
         except:
             return 0.0
 
+    def validate_concrete(self, df):
+        cleaned_data = []
+        errors = []
+        warnings = []
+        
+        # 1. Find Header
+        keywords = ['TARİH', 'FİRMA', 'BETON', 'SINIF', 'MİKTAR', 'İRSALİYE']
+        header_idx = self._find_header_row(df, keywords)
+        
+        if header_idx == -1:
+            # Existing columns are headers
+            pass
+        else:
+            if header_idx is None:
+                # Fallback: Check if first row is header
+                header_idx = 0
+                
+            # Reset dataframe to start from header
+            df = df.iloc[header_idx:].reset_index(drop=True)
+            df.columns = df.iloc[0]
+            df = df.iloc[1:].reset_index(drop=True)
+        
+        self._clean_column_names(df)
+        
+        # 2. Map Columns
+        col_map = {}
+        col_map['date'] = self._find_col(df, [r'TAR[İI]H', r'DATE'])
+        col_map['supplier'] = self._find_col(df, [r'F[İI]RMA', r'TEDAR[İI]K', r'BETONCU'])
+        col_map['waybill_no'] = self._find_col(df, [r'[İI]RSAL[İI]YE', r'F[İI][ŞS]'])
+        col_map['concrete_class'] = self._find_col(df, [r'SINIF', r'C[İI]NS', r'DAYANIM'])
+        col_map['quantity_m3'] = self._find_col(df, [r'M[İI]KTAR', r'M3', r'ADET'])
+        col_map['delivery_method'] = self._find_col(df, [r'TESL[İI]M', r'POMPA'])
+        col_map['location_block'] = self._find_col(df, [r'BLOK', r'YER', r'MAHAL'])
+        col_map['notes'] = self._find_col(df, [r'AÇIKLAMA', r'NOT'])
+        
+        # Critical columns check
+        if not col_map['date']:
+            return [], ["'Tarih' sütunu bulunamadı."], []
+        if not col_map['quantity_m3']:
+            # Check if it looks like a Rebar file
+            is_rebar = any(re.search(r'ÇAP|DEM[İI]R|Q\d+', col, re.IGNORECASE) for col in df.columns)
+            if is_rebar:
+                return [], ["'Miktar' (m3) sütunu bulunamadı. Demir dosyası yüklemeye çalışıyor olabilirsiniz. Lütfen yukarıdan '⚙️ Demir' seçeneğini seçtiğinizden emin olun."], []
+            return [], ["'Miktar' (m3) sütunu bulunamadı."], []
+
+        valid_classes = ['C16', 'C20', 'C25', 'C30', 'C35', 'C40', 'GRO', 'ŞAP', 'KUM', 'TAS', 'TAŞ']
+
+        for index, row in df.iterrows():
+            row_num = index + 2 + (header_idx if header_idx != -1 else 0)
+            try:
+                # Skip empty rows
+                if row.dropna().empty: continue
+                
+                # Skip "Total" rows
+                row_str = " ".join([str(v).upper() for v in row.values if pd.notna(v)])
+                if "TOPLAM" in row_str or "GENEL" in row_str: continue
+
+                data = {}
+                
+                # Date
+                data['date'] = self._parse_date(row.get(col_map['date']))
+                if not data['date']:
+                    errors.append(f"Satır {row_num}: Tarih geçersiz veya boş ({row.get(col_map['date'])})")
+                    continue
+                
                 # Quantity
                 qty = self._parse_float(row.get(col_map['quantity_m3']))
                 if qty <= 0:
