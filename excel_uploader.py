@@ -408,7 +408,10 @@ class ExcelValidator:
                 data['piece_count'] = int(self._parse_float(row.get(col_map['piece_count'])))
                 data['weight_kg'] = self._parse_float(row.get(col_map['weight_kg']))
                 
-                if data['weight_kg'] <= 0 and data['piece_count'] <= 0: continue
+                if data['weight_kg'] <= 0:
+                    if data['piece_count'] > 0:
+                        errors.append(f"Satır {row_num}: Ağırlık 0 olamaz (Adet: {data['piece_count']}). Veritabanı kısıtlaması nedeniyle ağırlık zorunludur.")
+                    continue
                 
                 data['dimensions'] = str(row.get(col_map['dimensions'])).strip() if col_map['dimensions'] and pd.notna(row.get(col_map['dimensions'])) else None
                 data['usage_location'] = str(row.get(col_map['usage_location'])).strip() if col_map['usage_location'] and pd.notna(row.get(col_map['usage_location'])) else None
