@@ -168,15 +168,16 @@ class ExcelValidator:
                 # Skip empty rows
                 if row.dropna().empty: continue
                 
-                # Skip "Total" rows
+                # Check for "Total" rows keywords
                 row_str = " ".join([str(v).upper() for v in row.values if pd.notna(v)])
-                if "TOPLAM" in row_str or "GENEL" in row_str: continue
+                is_total_row = "TOPLAM" in row_str or "GENEL" in row_str
 
                 data = {}
                 
                 # Date
                 data['date'] = self._parse_date(row.get(col_map['date']))
                 if not data['date']:
+                    if is_total_row: continue # Skip real total rows without date silently
                     errors.append(f"Satır {row_num}: Tarih geçersiz veya boş ({row.get(col_map['date'])})")
                     continue
                 
@@ -265,6 +266,15 @@ class ExcelValidator:
                     data['waybill_no'] = f"AUTO-{hashlib.md5(unique_str.encode()).hexdigest()[:8]}"
 
                 data['row_num'] = row_num
+                
+                if is_total_row:
+                    warnings.append({
+                        'row': row_num,
+                        'message': f"Satır 'TOPLAM' veya 'GENEL' içeriyor, olası özet satırı. (Miktar: {data['quantity_m3']})",
+                        'data': data
+                    })
+                    continue
+
                 cleaned_data.append(data)
                 
             except Exception as e:
