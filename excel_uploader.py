@@ -181,6 +181,8 @@ class ExcelValidator:
                     errors.append(f"Satır {row_num}: Tarih geçersiz veya boş ({row.get(col_map['date'])})")
                     continue
                 
+                # Quantity
+                qty = self._parse_float(row.get(col_map['quantity_m3']))
                 if qty <= 0:
                     # Warning case: Quantity 0
                     data['quantity_m3'] = 0.01 # DB requires > 0
