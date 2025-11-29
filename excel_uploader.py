@@ -175,11 +175,15 @@ class ExcelValidator:
                 
                 # Date
                 data['date'] = self._parse_date(row.get(col_map['date']))
-                if not data['date']: continue # Skip rows without valid date
+                if not data['date']:
+                    errors.append(f"Satır {row_num}: Tarih geçersiz veya boş ({row.get(col_map['date'])})")
+                    continue
                 
                 # Quantity
                 qty = self._parse_float(row.get(col_map['quantity_m3']))
-                if qty <= 0: continue # Skip rows with 0 quantity
+                if qty <= 0:
+                    errors.append(f"Satır {row_num}: Miktar 0 veya geçersiz ({row.get(col_map['quantity_m3'])})")
+                    continue
                 data['quantity_m3'] = qty
                 
                 # Supplier
