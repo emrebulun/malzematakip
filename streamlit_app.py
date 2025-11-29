@@ -1038,20 +1038,36 @@ elif page == "📂 Toplu Excel Yükleme":
 
             clean_data = []
             errors = []
+            warnings = []
 
             if import_type == "🧱 Beton":
-                clean_data, errors = validator.validate_concrete(df)
+                clean_data, errors, warnings = validator.validate_concrete(df)
             elif import_type == "⚙️ Demir":
-                clean_data, errors = validator.validate_rebar(df)
+                clean_data, errors, warnings = validator.validate_rebar(df)
             else:
-                clean_data, errors = validator.validate_mesh(df)
+                clean_data, errors, warnings = validator.validate_mesh(df)
 
             if errors:
                 st.error(f"❌ Dosyada {len(errors)} adet hata bulundu. Lütfen düzeltip tekrar yükleyin.")
-                with st.expander("Hata Listesi (Tıklayıp Genişletin)", expanded=True):
+                with st.expander("Hata Listesi (Tıklayıp Genişletin)"):
                     for err in errors:
-                        st.write(f"- {err}")
+                        st.write(f"• {err}")
+            
+            if warnings:
+                st.warning(f"⚠️ {len(warnings)} adet uyarı var. Bu satırlar varsayılan olarak eklenmeyecek.")
+                with st.expander("Uyarı Listesi (İncelemek için tıklayın)"):
+                    warning_df = pd.DataFrame([{'Satır': w['row'], 'Mesaj': w['message']} for w in warnings])
+                    st.dataframe(warning_df, use_container_width=True)
+                
+                if st.checkbox(f"⚠️ Uyarı verilen {len(warnings)} satırı da ekle (Onaylıyorum)", value=False, key="include_warnings"):
+                    for w in warnings:
+                        clean_data.append(w['data'])
+                    st.info("✅ Uyarı verilen satırlar listeye eklendi.")
+
+            if not clean_data:
+                st.warning("⚠️ Yüklenecek geçerli veri bulunamadı.")
             else:
+                st.success(f"✅ {len(clean_data)} adet geçerli kayıt bulundu.")            
                 # Calculate Total Quantity for Verification
                 df_preview = pd.DataFrame(clean_data)
                 

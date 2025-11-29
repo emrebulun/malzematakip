@@ -115,75 +115,49 @@ class ExcelValidator:
         except:
             return 0.0
 
-    def validate_concrete(self, df):
-        cleaned_data = []
-        errors = []
-        
-        # 1. Find Header
-        keywords = ['TARİH', 'FİRMA', 'BETON', 'SINIF', 'MİKTAR', 'İRSALİYE']
-        header_idx = self._find_header_row(df, keywords)
-        
-        if header_idx == -1:
-            # Existing columns are headers
-            pass
-        else:
-            if header_idx is None:
-                # Fallback: Check if first row is header
-                header_idx = 0
-                
-            # Reset dataframe to start from header
-            df = df.iloc[header_idx:].reset_index(drop=True)
-            df.columns = df.iloc[0]
-            df = df.iloc[1:].reset_index(drop=True)
-        
-        self._clean_column_names(df)
-        
-        # 2. Map Columns
-        col_map = {}
-        col_map['date'] = self._find_col(df, [r'TAR[İI]H', r'DATE'])
-        col_map['supplier'] = self._find_col(df, [r'F[İI]RMA', r'TEDAR[İI]K', r'BETONCU'])
-        col_map['waybill_no'] = self._find_col(df, [r'[İI]RSAL[İI]YE', r'F[İI][ŞS]'])
-        col_map['concrete_class'] = self._find_col(df, [r'SINIF', r'C[İI]NS', r'DAYANIM'])
-        col_map['quantity_m3'] = self._find_col(df, [r'M[İI]KTAR', r'M3', r'ADET'])
-        col_map['delivery_method'] = self._find_col(df, [r'TESL[İI]M', r'POMPA'])
-        col_map['location_block'] = self._find_col(df, [r'BLOK', r'YER', r'MAHAL'])
-        col_map['notes'] = self._find_col(df, [r'AÇIKLAMA', r'NOT'])
-        
-        # Critical columns check
-        if not col_map['date']:
-            return [], ["'Tarih' sütunu bulunamadı."]
-        if not col_map['quantity_m3']:
-            # Check if it looks like a Rebar file
-            is_rebar = any(re.search(r'ÇAP|DEM[İI]R|Q\d+', col, re.IGNORECASE) for col in df.columns)
-            if is_rebar:
-                return [], ["'Miktar' (m3) sütunu bulunamadı. Demir dosyası yüklemeye çalışıyor olabilirsiniz. Lütfen yukarıdan '⚙️ Demir' seçeneğini seçtiğinizden emin olun."]
-            return [], ["'Miktar' (m3) sütunu bulunamadı."]
-
-        valid_classes = ['C16', 'C20', 'C25', 'C30', 'C35', 'C40', 'GRO', 'ŞAP', 'KUM', 'TAS', 'TAŞ']
-
-        for index, row in df.iterrows():
-            row_num = index + 2 + (header_idx if header_idx != -1 else 0)
-            try:
-                # Skip empty rows
-                if row.dropna().empty: continue
-                
-                # Skip "Total" rows
-                row_str = " ".join([str(v).upper() for v in row.values if pd.notna(v)])
-                if "TOPLAM" in row_str or "GENEL" in row_str: continue
-
-                data = {}
-                
-                # Date
-                data['date'] = self._parse_date(row.get(col_map['date']))
-                if not data['date']:
-                    errors.append(f"Satır {row_num}: Tarih geçersiz veya boş ({row.get(col_map['date'])})")
-                    continue
-                
                 # Quantity
                 qty = self._parse_float(row.get(col_map['quantity_m3']))
                 if qty <= 0:
-                    errors.append(f"Satır {row_num}: Miktar 0 veya geçersiz ({row.get(col_map['quantity_m3'])})")
+                    # Warning case: Quantity 0
+                    data['quantity_m3'] = qty
+                    # Fill other fields to present a complete record for confirmation
+                    if col_map['supplier'] and pd.notna(row.get(col_map['supplier'])):
+                        data['supplier'] = str(row.get(col_map['supplier'])).strip().upper()
+                    else:
+                        data['supplier'] = "BİLİNMEYEN"
+                    
+                    if col_map['concrete_class'] and pd.notna(row.get(col_map['concrete_class'])):
+                        raw_class = str(row.get(col_map['concrete_class'])).strip().upper().replace(" ", "")
+                        matched = next((c for c in valid_classes if c in raw_class), None)
+                        data['concrete_class'] = matched if matched else "Diğer"
+                    else:
+                        data['concrete_class'] = "Diğer"
+                        
+                    if col_map['delivery_method'] and pd.notna(row.get(col_map['delivery_method'])):
+                        d_method = str(row.get(col_map['delivery_method'])).strip().upper()
+                        data['delivery_method'] = "POMPALI" if "POMPA" in d_method else "MİKSERLİ"
+                    else:
+                        data['delivery_method'] = "MİKSERLİ"
+                        
+                    data['location_block'] = str(row.get(col_map['location_block'])).strip() if col_map['location_block'] and pd.notna(row.get(col_map['location_block'])) else None
+                    data['notes'] = str(row.get(col_map['notes'])).strip() if col_map['notes'] and pd.notna(row.get(col_map['notes'])) else None
+                    
+                    # Waybill generation for warning
+                    if col_map['waybill_no'] and pd.notna(row.get(col_map['waybill_no'])):
+                        wb = str(row.get(col_map['waybill_no'])).strip().upper()
+                        data['waybill_no'] = wb if wb else f"AUTO-{hashlib.md5(str(row_num).encode()).hexdigest()[:8]}"
+                    else:
+                        data['waybill_no'] = f"AUTO-{hashlib.md5(str(row_num).encode()).hexdigest()[:8]}"
+                        
+                    data['row_num'] = row_num
+                    
+                    warnings.append({
+                        'row': row_num,
+                        'message': f"Miktar 0 veya geçersiz ({row.get(col_map['quantity_m3'])})",
+                        'data': data
+                    })
                     continue
+                    
                 data['quantity_m3'] = qty
                 
                 # Supplier
@@ -225,12 +199,13 @@ class ExcelValidator:
                     unique_str = f"{data['date']}_{data['supplier']}_{data['concrete_class']}_{data['quantity_m3']:.2f}_{data['location_block'] or ''}"
                     data['waybill_no'] = f"AUTO-{hashlib.md5(unique_str.encode()).hexdigest()[:8]}"
 
+                data['row_num'] = row_num
                 cleaned_data.append(data)
                 
             except Exception as e:
                 errors.append(f"Satır {row_num}: {str(e)}")
                 
-        return cleaned_data, errors
+        return cleaned_data, errors, warnings
 
     def _find_all_cols(self, df, patterns):
         """Find ALL columns matching one of the regex patterns."""
@@ -245,6 +220,7 @@ class ExcelValidator:
     def validate_rebar(self, df):
         cleaned_data = []
         errors = []
+        warnings = []
         
         # 1. Find Header
         keywords = ['TARİH', 'FİRMA', 'TEDARİK', 'İRSALİYE', 'DEMİR', 'ÇAP']
@@ -269,7 +245,7 @@ class ExcelValidator:
         col_map['manufacturer'] = self._find_col(df, [r'ÜRET[İI]C[İI]', 'MARKA'])
         col_map['notes'] = self._find_col(df, [r'NOT', 'AÇIKLAMA'])
         
-        if not col_map['date']: return [], ["'Tarih' sütunu bulunamadı."]
+        if not col_map['date']: return [], ["'Tarih' sütunu bulunamadı."], []
         
         # Find diameter columns (Allow multiple columns for same diameter)
         diameter_cols = {}
@@ -349,11 +325,12 @@ class ExcelValidator:
             except Exception as e:
                 errors.append(f"Satır {row_num}: {str(e)}")
                 
-        return cleaned_data, errors
+        return cleaned_data, errors, warnings
 
     def validate_mesh(self, df):
         cleaned_data = []
         errors = []
+        warnings = []
         
         keywords = ['TARİH', 'FİRMA', 'HASIR', 'TİP', 'MİKTAR', 'AĞIRLIK']
         header_idx = self._find_header_row(df, keywords)
@@ -388,7 +365,7 @@ class ExcelValidator:
         if cols_to_ffill:
             df[cols_to_ffill] = df[cols_to_ffill].ffill()
         
-        if not col_map['date']: return [], ["'Tarih' sütunu bulunamadı."]
+        if not col_map['date']: return [], ["'Tarih' sütunu bulunamadı."], []
 
         for index, row in df.iterrows():
             row_num = index + 2 + header_idx
@@ -459,4 +436,4 @@ class ExcelValidator:
             except Exception as e:
                 errors.append(f"Satır {row_num}: {str(e)}")
                 
-        return cleaned_data, errors
+        return cleaned_data, errors, warnings
