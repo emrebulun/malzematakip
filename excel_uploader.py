@@ -115,10 +115,10 @@ class ExcelValidator:
         except:
             return 0.0
 
-    def validate_concrete(self, df):
         cleaned_data = []
         errors = []
         warnings = []
+        content_counts = {}
         
         # 1. Find Header
         keywords = ['TARİH', 'FİRMA', 'BETON', 'SINIF', 'MİKTAR', 'İRSALİYE']
@@ -255,17 +255,36 @@ class ExcelValidator:
                 data['notes'] = str(row.get(col_map['notes'])).strip() if col_map['notes'] and pd.notna(row.get(col_map['notes'])) else None
                 
                 # Waybill No (Critical for duplicates)
+                # We use a content-based hash with a counter to handle identical rows (e.g. same delivery split)
+                # while being robust to row shifting (unlike using row_num).
+                
+                wb = None
                 if col_map['waybill_no'] and pd.notna(row.get(col_map['waybill_no'])):
-                    wb = str(row.get(col_map['waybill_no'])).strip().upper()
-                    if wb:
-                        data['waybill_no'] = wb
-                    else:
-                        # Generate hash
-                        unique_str = f"{data['date']}_{data['supplier']}_{data['concrete_class']}_{data['quantity_m3']:.2f}_{data['location_block'] or ''}"
-                        data['waybill_no'] = f"AUTO-{hashlib.md5(unique_str.encode()).hexdigest()[:8]}"
+                    wb_val = str(row.get(col_map['waybill_no'])).strip().upper()
+                    if wb_val: wb = wb_val
+
+                if wb:
+                    data['waybill_no'] = wb
                 else:
-                    # Generate hash
-                    unique_str = f"{data['date']}_{data['supplier']}_{data['concrete_class']}_{data['quantity_m3']:.2f}_{data['location_block'] or ''}"
+                    # Generate hash based on ALL content fields
+                    # This ensures that if we have 2 identical rows, they get unique IDs (via counter),
+                    # but if we re-upload the same file, they get the SAME IDs (preserving duplicate check).
+                    base_unique_str = (
+                        f"{data['date']}_"
+                        f"{data['supplier']}_"
+                        f"{data['concrete_class']}_"
+                        f"{data['quantity_m3']:.2f}_"
+                        f"{data['delivery_method']}_"
+                        f"{data['location_block'] or ''}_"
+                        f"{data['notes'] or ''}"
+                    )
+                    
+                    # Increment counter for this specific content combination
+                    count = content_counts.get(base_unique_str, 0) + 1
+                    content_counts[base_unique_str] = count
+                    
+                    # Append count to ensure uniqueness for identical rows
+                    unique_str = f"{base_unique_str}_{count}"
                     data['waybill_no'] = f"AUTO-{hashlib.md5(unique_str.encode()).hexdigest()[:8]}"
 
                 data['row_num'] = row_num
