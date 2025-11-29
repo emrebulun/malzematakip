@@ -181,11 +181,10 @@ class ExcelValidator:
                     errors.append(f"Satır {row_num}: Tarih geçersiz veya boş ({row.get(col_map['date'])})")
                     continue
                 
-                # Quantity
-                qty = self._parse_float(row.get(col_map['quantity_m3']))
                 if qty <= 0:
                     # Warning case: Quantity 0
-                    data['quantity_m3'] = qty
+                    data['quantity_m3'] = 0.01 # DB requires > 0
+                    
                     # Fill other fields to present a complete record for confirmation
                     if col_map['supplier'] and pd.notna(row.get(col_map['supplier'])):
                         data['supplier'] = str(row.get(col_map['supplier'])).strip().upper()
@@ -206,7 +205,9 @@ class ExcelValidator:
                         data['delivery_method'] = "MİKSERLİ"
                         
                     data['location_block'] = str(row.get(col_map['location_block'])).strip() if col_map['location_block'] and pd.notna(row.get(col_map['location_block'])) else None
-                    data['notes'] = str(row.get(col_map['notes'])).strip() if col_map['notes'] and pd.notna(row.get(col_map['notes'])) else None
+                    
+                    original_note = str(row.get(col_map['notes'])).strip() if col_map['notes'] and pd.notna(row.get(col_map['notes'])) else ""
+                    data['notes'] = f"{original_note} | Miktar 0 girildi, 0.01 m3 atandı".strip(" |")
                     
                     # Waybill generation for warning
                     if col_map['waybill_no'] and pd.notna(row.get(col_map['waybill_no'])):
