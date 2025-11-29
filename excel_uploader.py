@@ -368,8 +368,20 @@ class ExcelValidator:
         col_map['supplier'] = self._find_col(df, [r'F[İI]RMA', r'TEDAR[İI]K'])
         col_map['waybill_no'] = self._find_col(df, [r'[İI]RSAL[İI]YE', r'F[İI][ŞS]'])
         col_map['mesh_type'] = self._find_col(df, [r'HASIR', 'T[İI]P', 'C[İI]NS'])
-        col_map['piece_count'] = self._find_col(df, [r'ADET', 'M[İI]KTAR'])
-        col_map['weight_kg'] = self._find_col(df, [r'AĞIRLIK', 'KG'])
+        
+        # Smart mapping for Weight vs Piece Count
+        weight_col = self._find_col(df, [r'AĞIRLIK', 'KG'])
+        piece_col = self._find_col(df, [r'ADET'])
+        miktar_col = self._find_col(df, [r'M[İI]KTAR'])
+        
+        if not weight_col and miktar_col:
+            weight_col = miktar_col
+        elif not piece_col and miktar_col and weight_col != miktar_col:
+            piece_col = miktar_col
+            
+        col_map['piece_count'] = piece_col
+        col_map['weight_kg'] = weight_col
+        
         col_map['dimensions'] = self._find_col(df, [r'EBAT'])
         col_map['usage_location'] = self._find_col(df, [r'KULLANIM', 'YER'])
         col_map['notes'] = self._find_col(df, [r'NOT', 'AÇIKLAMA'])
