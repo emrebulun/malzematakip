@@ -368,23 +368,21 @@ class ExcelValidator:
         col_map['supplier'] = self._find_col(df, [r'F[İI]RMA', r'TEDAR[İI]K'])
         col_map['waybill_no'] = self._find_col(df, [r'[İI]RSAL[İI]YE', r'F[İI][ŞS]'])
         col_map['mesh_type'] = self._find_col(df, [r'HASIR', 'T[İI]P', 'C[İI]NS'])
-        
-        # Smart mapping for Weight vs Piece Count
-        weight_col = self._find_col(df, [r'AĞIRLIK', 'KG'])
-        piece_col = self._find_col(df, [r'ADET'])
-        miktar_col = self._find_col(df, [r'M[İI]KTAR'])
-        
-        if not weight_col and miktar_col:
-            weight_col = miktar_col
-        elif not piece_col and miktar_col and weight_col != miktar_col:
-            piece_col = miktar_col
-            
-        col_map['piece_count'] = piece_col
-        col_map['weight_kg'] = weight_col
-        
+        col_map['piece_count'] = self._find_col(df, [r'ADET', 'M[İI]KTAR'])
+        col_map['weight_kg'] = self._find_col(df, [r'AĞIRLIK', 'KG'])
         col_map['dimensions'] = self._find_col(df, [r'EBAT'])
         col_map['usage_location'] = self._find_col(df, [r'KULLANIM', 'YER'])
         col_map['notes'] = self._find_col(df, [r'NOT', 'AÇIKLAMA'])
+        
+        # Handle merged cells (ffill)
+        # We ffill key columns to handle merged cells in Excel
+        cols_to_ffill = []
+        if col_map['date']: cols_to_ffill.append(col_map['date'])
+        if col_map['supplier']: cols_to_ffill.append(col_map['supplier'])
+        if col_map['waybill_no']: cols_to_ffill.append(col_map['waybill_no'])
+        
+        if cols_to_ffill:
+            df[cols_to_ffill] = df[cols_to_ffill].ffill()
         
         if not col_map['date']: return [], ["'Tarih' sütunu bulunamadı."]
 
@@ -420,10 +418,14 @@ class ExcelValidator:
                 data['piece_count'] = int(self._parse_float(row.get(col_map['piece_count'])))
                 data['weight_kg'] = self._parse_float(row.get(col_map['weight_kg']))
                 
+                # Handle merged weight column (weight is usually on the first row of the merge)
+                # If weight is 0 but we have pieces, assign a dummy small weight to satisfy DB constraint
                 if data['weight_kg'] <= 0:
                     if data['piece_count'] > 0:
-                        errors.append(f"Satır {row_num}: Ağırlık 0 olamaz (Adet: {data['piece_count']}). Veritabanı kısıtlaması nedeniyle ağırlık zorunludur.")
-                    continue
+                        data['weight_kg'] = 0.001 # 1 gram dummy weight
+                        extra_note = f"{extra_note} | Ağırlık ana kayıtta".strip(" |")
+                    else:
+                        continue # Skip if both 0
                 
                 data['dimensions'] = str(row.get(col_map['dimensions'])).strip() if col_map['dimensions'] and pd.notna(row.get(col_map['dimensions'])) else None
                 data['usage_location'] = str(row.get(col_map['usage_location'])).strip() if col_map['usage_location'] and pd.notna(row.get(col_map['usage_location'])) else None
