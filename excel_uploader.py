@@ -115,6 +115,7 @@ class ExcelValidator:
         except:
             return 0.0
 
+    def validate_concrete(self, df):
         cleaned_data = []
         errors = []
         warnings = []
