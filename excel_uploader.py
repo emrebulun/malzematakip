@@ -418,14 +418,19 @@ class ExcelValidator:
                 data['piece_count'] = int(self._parse_float(row.get(col_map['piece_count'])))
                 data['weight_kg'] = self._parse_float(row.get(col_map['weight_kg']))
                 
-                # Handle merged weight column (weight is usually on the first row of the merge)
-                # If weight is 0 but we have pieces, assign a dummy small weight to satisfy DB constraint
+                # Validation and Fixes for DB Constraints
+                if data['piece_count'] <= 0 and data['weight_kg'] <= 0:
+                    continue # Skip empty rows
+                
+                if data['piece_count'] <= 0:
+                    # If we have weight but no pieces, assume 1 piece (bulk)
+                    data['piece_count'] = 1
+                    extra_note = f"{extra_note} | Adet girilmedi".strip(" |")
+                    
                 if data['weight_kg'] <= 0:
-                    if data['piece_count'] > 0:
-                        data['weight_kg'] = 0.001 # 1 gram dummy weight
-                        extra_note = f"{extra_note} | Ağırlık ana kayıtta".strip(" |")
-                    else:
-                        continue # Skip if both 0
+                    # If we have pieces but no weight (merged cell case), assign dummy weight
+                    data['weight_kg'] = 0.001
+                    extra_note = f"{extra_note} | Ağırlık ana kayıtta".strip(" |")
                 
                 data['dimensions'] = str(row.get(col_map['dimensions'])).strip() if col_map['dimensions'] and pd.notna(row.get(col_map['dimensions'])) else None
                 data['usage_location'] = str(row.get(col_map['usage_location'])).strip() if col_map['usage_location'] and pd.notna(row.get(col_map['usage_location'])) else None
