@@ -849,9 +849,9 @@ class SupabaseManagerREST_v2:
 # ============================================
 
 @st.cache_resource
-def get_db_manager_rest_v8() -> SupabaseManagerREST_v2:
-    """Get or create cached database manager instance (REST API) - V8"""
-    print("Initializing SupabaseManagerREST_v2 (V8)...")
+def get_db_manager_rest_v9() -> SupabaseManagerREST_v2:
+    """Get or create cached database manager instance (REST API) - V9"""
+    print("Initializing SupabaseManagerREST_v2 (V9)...")
     return SupabaseManagerREST_v2()
 
 
