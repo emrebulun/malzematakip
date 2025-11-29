@@ -536,53 +536,130 @@ class SupabaseManagerREST_v2:
             st.error(f"❌ Failed to add mesh: {e}")
             return False
 
-    def bulk_insert_mesh(self, data_list: List[Dict], batch_size: int = 500) -> Dict:
-        """Bulk insert mesh records"""
+    def check_mesh_duplicates(self, data_list: List[Dict]) -> Tuple[List[Dict], List[Dict]]:
+        """Check for duplicates in the database based on content."""
         try:
-            if not data_list: return {'success': True, 'total_inserted': 0}
+            if not data_list:
+                return [], []
 
-            dates = []
-            for item in data_list:
-                if isinstance(item.get('date'), (date, pd.Timestamp)):
-                    item['date'] = item['date'].isoformat() if hasattr(item['date'], 'isoformat') else str(item['date'])
-                dates.append(item['date'])
-            
-            if not dates: return {'success': False, 'error': "No dates"}
-
+            dates = [item['date'] for item in data_list]
             min_date = min(dates)
             max_date = max(dates)
 
+            # Fetch existing logs
             existing_logs = self.get_mesh_logs(start_date=min_date, end_date=max_date)
-            existing_keys = set()
+            
+            existing_signatures = set()
             if not existing_logs.empty:
                 for _, row in existing_logs.iterrows():
                     d_val = row['date']
                     d_str = d_val.strftime('%Y-%m-%d') if isinstance(d_val, pd.Timestamp) else str(d_val).split('T')[0]
                     supp = str(row['supplier']).strip().upper()
-                    wayb = str(row['waybill_no']).strip().upper()
-                    existing_keys.add((d_str, supp, wayb))
+                    
+                    # For mesh, we check date, supplier, and waybill (or weight/type if waybill is auto)
+                    wayb = str(row.get('waybill_no') or '').strip().upper()
+                    
+                    # If waybill is AUTO, we might want to check content more deeply
+                    # But for now, let's stick to the key used in bulk_insert: (date, supplier, waybill)
+                    # Or better: (date, supplier, waybill, weight) to be more specific
+                    weight = float(row.get('weight_kg', 0))
+                    
+                    sig = (d_str, supp, wayb, f"{weight:.2f}")
+                    existing_signatures.add(sig)
 
-            new_data = []
-            skipped = 0
+            new_records = []
+            potential_duplicates = []
+
             for item in data_list:
                 i_date = item['date']
                 if 'T' in i_date: i_date = i_date.split('T')[0]
                 i_supp = str(item['supplier']).strip().upper()
-                i_wayb = str(item['waybill_no']).strip().upper()
-                
-                if (i_date, i_supp, i_wayb) in existing_keys:
-                    skipped += 1
-                else:
-                    new_data.append(item)
-                    existing_keys.add((i_date, i_supp, i_wayb))
+                i_wayb = str(item.get('waybill_no') or '').strip().upper()
+                i_weight = float(item.get('weight_kg', 0))
 
-            if not new_data:
-                return {'success': True, 'total_inserted': 0, 'skipped': skipped, 'message': "All duplicates"}
+                sig = (i_date, i_supp, i_wayb, f"{i_weight:.2f}")
+
+                if sig in existing_signatures:
+                    potential_duplicates.append(item)
+                else:
+                    new_records.append(item)
+
+            return new_records, potential_duplicates
+
+        except Exception as e:
+            st.error(f"❌ Mesh duplicate check failed: {e}")
+            return data_list, []
+
+    def bulk_insert_mesh(self, data_list: List[Dict], batch_size: int = 500, skip_existing: bool = True) -> Dict:
+        """Bulk insert mesh records"""
+        try:
+            if not data_list: return {'success': True, 'total_inserted': 0}
+
+            data_to_insert = []
+            skipped = 0
+            skipped_rows = []
+
+            if skip_existing:
+                dates = []
+                for item in data_list:
+                    if isinstance(item.get('date'), (date, pd.Timestamp)):
+                        item['date'] = item['date'].isoformat() if hasattr(item['date'], 'isoformat') else str(item['date'])
+                    dates.append(item['date'])
+                
+                if not dates: return {'success': False, 'error': "No dates"}
+
+                min_date = min(dates)
+                max_date = max(dates)
+
+                existing_logs = self.get_mesh_logs(start_date=min_date, end_date=max_date)
+                existing_keys = set()
+                if not existing_logs.empty:
+                    for _, row in existing_logs.iterrows():
+                        d_val = row['date']
+                        d_str = d_val.strftime('%Y-%m-%d') if isinstance(d_val, pd.Timestamp) else str(d_val).split('T')[0]
+                        supp = str(row['supplier']).strip().upper()
+                        wayb = str(row['waybill_no']).strip().upper()
+                        # We use the same key as check_duplicates for consistency
+                        weight = float(row.get('weight_kg', 0))
+                        existing_keys.add((d_str, supp, wayb, f"{weight:.2f}"))
+
+                for item in data_list:
+                    i_date = item['date']
+                    if 'T' in i_date: i_date = i_date.split('T')[0]
+                    i_supp = str(item['supplier']).strip().upper()
+                    i_wayb = str(item['waybill_no']).strip().upper()
+                    i_weight = float(item.get('weight_kg', 0))
+                    
+                    key = (i_date, i_supp, i_wayb, f"{i_weight:.2f}")
+                    
+                    if key in existing_keys:
+                        skipped += 1
+                        # Track row number if available (from excel_uploader)
+                        # Note: excel_uploader for mesh currently doesn't add 'row_num' to data dict?
+                        # Let's check excel_uploader.py. It DOES define row_num in loop, but does it add to data?
+                        # Looking at previous view of excel_uploader.py (Step 771), it does NOT add row_num to data.
+                        # I should probably add it there too, but for now let's handle if it exists.
+                        if 'row_num' in item:
+                            skipped_rows.append(item['row_num'])
+                    else:
+                        item_to_insert = item.copy()
+                        if 'row_num' in item_to_insert: del item_to_insert['row_num']
+                        data_to_insert.append(item_to_insert)
+                        existing_keys.add(key)
+            else:
+                 # Prepare all data for insertion
+                for item in data_list:
+                    item_to_insert = item.copy()
+                    if 'row_num' in item_to_insert: del item_to_insert['row_num']
+                    data_to_insert.append(item_to_insert)
+
+            if not data_to_insert:
+                return {'success': True, 'total_inserted': 0, 'skipped': skipped, 'skipped_rows': skipped_rows, 'message': "All duplicates"}
 
             total_inserted = 0
             failed = 0
-            for i in range(0, len(new_data), batch_size):
-                batch = new_data[i:i + batch_size]
+            for i in range(0, len(data_to_insert), batch_size):
+                batch = data_to_insert[i:i + batch_size]
                 try:
                     response = self.client.table('mesh_logs').insert(batch).execute()
                     if response.data: total_inserted += len(response.data)
@@ -590,7 +667,7 @@ class SupabaseManagerREST_v2:
                     st.warning(f"⚠️ Batch failed: {batch_error}")
                     failed += len(batch)
             
-            return {'success': True, 'total_inserted': total_inserted, 'failed': failed, 'skipped': skipped}
+            return {'success': True, 'total_inserted': total_inserted, 'failed': failed, 'skipped': skipped, 'skipped_rows': skipped_rows}
 
         except Exception as e:
             st.error(f"❌ Bulk insert mesh failed: {e}")
