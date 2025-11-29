@@ -63,7 +63,15 @@ class SupabaseManagerREST_v2:
             if not data_list:
                 return [], []
 
-            dates = [item['date'] for item in data_list]
+            # Ensure dates are strings for query
+            dates = []
+            for item in data_list:
+                d = item['date']
+                if isinstance(d, (date, datetime)):
+                    dates.append(d.isoformat())
+                else:
+                    dates.append(str(d))
+            
             min_date = min(dates)
             max_date = max(dates)
 
@@ -87,12 +95,16 @@ class SupabaseManagerREST_v2:
 
             for item in data_list:
                 i_date = item['date']
-                if 'T' in i_date: i_date = i_date.split('T')[0]
+                if isinstance(i_date, (date, datetime)):
+                    i_date_str = i_date.isoformat()
+                else:
+                    i_date_str = str(i_date).split('T')[0]
+                
                 i_supp = str(item['supplier']).strip().upper()
                 i_wayb = str(item['waybill_no']).strip().upper()
                 i_qty = float(item.get('quantity_m3', 0))
 
-                sig = (i_date, i_supp, i_wayb, f"{i_qty:.2f}")
+                sig = (i_date_str, i_supp, i_wayb, f"{i_qty:.2f}")
 
                 if sig in existing_signatures:
                     potential_duplicates.append(item)
@@ -381,7 +393,15 @@ class SupabaseManagerREST_v2:
             if not data_list:
                 return [], []
 
-            dates = [item['date'] for item in data_list]
+            # Ensure dates are strings for query
+            dates = []
+            for item in data_list:
+                d = item['date']
+                if isinstance(d, (date, datetime)):
+                    dates.append(d.isoformat())
+                else:
+                    dates.append(str(d))
+            
             min_date = min(dates)
             max_date = max(dates)
 
@@ -414,15 +434,19 @@ class SupabaseManagerREST_v2:
 
             for item in data_list:
                 i_date = item['date']
-                if 'T' in i_date: i_date = i_date.split('T')[0]
+                if isinstance(i_date, (date, datetime)):
+                    i_date_str = i_date.isoformat()
+                else:
+                    i_date_str = str(i_date).split('T')[0]
+                
                 i_supp = str(item['supplier']).strip().upper()
                 i_total_w = float(item.get('total_weight_kg', 0))
                 i_wayb = str(item.get('waybill_no') or '').strip().upper()
 
                 if i_wayb.startswith('AUTO-'):
-                    sig = (i_date, i_supp, f"{i_total_w:.2f}")
+                    sig = (i_date_str, i_supp, f"{i_total_w:.2f}")
                 else:
-                    sig = (i_date, i_supp, i_wayb)
+                    sig = (i_date_str, i_supp, i_wayb)
 
                 if sig in existing_signatures:
                     potential_duplicates.append(item)
@@ -595,7 +619,15 @@ class SupabaseManagerREST_v2:
             if not data_list:
                 return [], []
 
-            dates = [item['date'] for item in data_list]
+            # Ensure dates are strings for query
+            dates = []
+            for item in data_list:
+                d = item['date']
+                if isinstance(d, (date, datetime)):
+                    dates.append(d.isoformat())
+                else:
+                    dates.append(str(d))
+            
             min_date = min(dates)
             max_date = max(dates)
 
@@ -625,12 +657,16 @@ class SupabaseManagerREST_v2:
 
             for item in data_list:
                 i_date = item['date']
-                if 'T' in i_date: i_date = i_date.split('T')[0]
+                if isinstance(i_date, (date, datetime)):
+                    i_date_str = i_date.isoformat()
+                else:
+                    i_date_str = str(i_date).split('T')[0]
+                
                 i_supp = str(item['supplier']).strip().upper()
                 i_wayb = str(item.get('waybill_no') or '').strip().upper()
                 i_weight = float(item.get('weight_kg', 0))
 
-                sig = (i_date, i_supp, i_wayb, f"{i_weight:.2f}")
+                sig = (i_date_str, i_supp, i_wayb, f"{i_weight:.2f}")
 
                 if sig in existing_signatures:
                     potential_duplicates.append(item)
